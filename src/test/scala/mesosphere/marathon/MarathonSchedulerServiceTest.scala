@@ -7,6 +7,7 @@ import akka.testkit.TestProbe
 import com.codahale.metrics.MetricRegistry
 import mesosphere.chaos.http.HttpConf
 import mesosphere.marathon.Protos.StorageVersion
+import mesosphere.marathon.core.base.RichRuntime
 import mesosphere.marathon.core.election.ElectionService
 import mesosphere.marathon.core.health.HealthCheckManager
 import mesosphere.marathon.core.heartbeat._
@@ -16,12 +17,12 @@ import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.storage.migration.Migration
 import mesosphere.marathon.storage.repository.{ AppRepository, FrameworkIdRepository }
-import mesosphere.marathon.test.{ MarathonActorSupport, MarathonSpec }
+import mesosphere.marathon.test.{ ExitDisabledTest, MarathonActorSupport, MarathonSpec }
 import mesosphere.util.state.FrameworkId
 import org.apache.mesos.{ SchedulerDriver, Protos => mesos }
 import org.mockito.Matchers.{ any, eq => mockEq }
 import org.mockito.Mockito
-import org.mockito.Mockito.{ times, verify, when }
+import org.mockito.Mockito.{ verify, when }
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.rogach.scallop.ScallopOption
@@ -68,7 +69,8 @@ class MarathonSchedulerServiceTest
     with MarathonSpec
     with BeforeAndAfter
     with Matchers
-    with ScalaFutures {
+    with ScalaFutures
+    with ExitDisabledTest {
   import MarathonSchedulerServiceTest._
 
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -89,6 +91,7 @@ class MarathonSchedulerServiceTest
   private[this] var heartbeatActor: ActorRef = _
   private[this] var prePostDriverCallbacks: scala.collection.immutable.Seq[PrePostDriverCallback] = _
   private[this] var mockTimer: Timer = _
+  override val invokeBeforeAllAndAfterAllEvenIfNoTestsAreExpected = false
 
   before {
     probe = TestProbe()
@@ -169,7 +172,7 @@ class MarathonSchedulerServiceTest
     assert(Heartbeat.MessageDeactivate(MesosHeartbeatMonitor.sessionOf(driver)) == hmsg)
   }
 
-  test("Re-enable timer when re-elected") {
+  test("Exit on loss of leadership") {
     when(frameworkIdRepository.get()).thenReturn(Future.successful(None))
 
     val schedulerService = new MarathonSchedulerService(
@@ -195,11 +198,7 @@ class MarathonSchedulerServiceTest
 
     schedulerService.stopLeadership()
 
-    schedulerService.startLeadership()
-
-    verify(mockTimer, times(2)).schedule(any(), mockEq(ScaleAppsDelay), mockEq(ScaleAppsInterval))
-    verify(mockTimer, times(2)).schedule(any[TimerTask](), mockEq(ReconciliationDelay), mockEq(ReconciliationInterval))
-    verify(mockTimer).cancel()
+    exitCalled(RichRuntime.FatalErrorSignal).futureValue should be(true)
   }
 
   test("Always fetch current framework ID") {
@@ -234,7 +233,7 @@ class MarathonSchedulerServiceTest
     awaitAssert(schedulerService.frameworkId should be(Some(frameworkId)))
   }
 
-  test("Abdicate leadership when migration fails and reoffer leadership") {
+  test("throw in start leadership when migration fails") {
     when(frameworkIdRepository.get()).thenReturn(Future.successful(None))
 
     val schedulerService = new MarathonSchedulerService(
@@ -262,17 +261,12 @@ class MarathonSchedulerServiceTest
       }
     })
 
-    try {
+    intercept[TimeoutException] {
       schedulerService.startLeadership()
-    } catch {
-      case _: TimeoutException =>
-        schedulerService.stopLeadership()
     }
-
-    verify(electionService, Mockito.timeout(1000)).offerLeadership(candidate = schedulerService)
   }
 
-  test("Abdicate leadership when the driver creation fails by some exception") {
+  test("throw when the driver creation fails by some exception") {
     when(frameworkIdRepository.get()).thenReturn(Future.successful(None))
     val driverFactory = mock[SchedulerDriverFactory]
 
@@ -295,13 +289,9 @@ class MarathonSchedulerServiceTest
     when(leadershipCoordinator.prepareForStart()).thenReturn(Future.successful(()))
     when(driverFactory.createDriver()).thenThrow(new Exception("Some weird exception"))
 
-    try {
+    intercept[Exception] {
       schedulerService.startLeadership()
-    } catch {
-      case e: Exception => schedulerService.stopLeadership()
     }
-
-    verify(electionService, Mockito.timeout(1000)).offerLeadership(candidate = schedulerService)
   }
 
   test("Abdicate leadership when driver ends with error") {
@@ -381,6 +371,6 @@ class MarathonSchedulerServiceTest
     driverCompleted.countDown()
     awaitAssert(verify(cb).postDriverTerminates)
 
-    awaitAssert(verify(electionService).offerLeadership(candidate = schedulerService))
+    exitCalled(RichRuntime.FatalErrorSignal).futureValue should be(true)
   }
 }

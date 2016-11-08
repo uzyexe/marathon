@@ -127,7 +127,7 @@ object IntegrationTestConfig {
     val httpPort = int("httpPort", PortAllocator.ephemeralPort())
     val marathonHost = string("marathonHost", "localhost")
     val marathonBasePort = int("marathonPort", PortAllocator.ephemeralPort())
-    val clusterSize = int("clusterSize", 3)
+    val clusterSize = int("clusterSize", 2)
     val marathonPorts = 0.until(clusterSize).map(_ => PortAllocator.ephemeralPort())
     val marathonGroup = PathId(string("marathonGroup", "/marathon_integration_test"))
 
