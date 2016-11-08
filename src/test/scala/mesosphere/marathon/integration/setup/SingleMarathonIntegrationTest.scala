@@ -325,23 +325,24 @@ trait SingleMarathonIntegrationTest
     log.info("Starting to CLEAN UP !!!!!!!!!!")
     events.clear()
     ExternalMarathonIntegrationTest.healthChecks.clear()
+    Try {
+      val deleteResult: RestResult[ITDeploymentResult] = marathon.deleteGroup(testBasePath, force = true)
+      if (deleteResult.code != 404) {
+        waitForChange(deleteResult)
+      }
 
-    val deleteResult: RestResult[ITDeploymentResult] = marathon.deleteGroup(testBasePath, force = true)
-    if (deleteResult.code != 404) {
-      waitForChange(deleteResult)
+      waitForCleanSlateInMesos()
+
+      val apps = marathon.listAppsInBaseGroup
+      require(apps.value.isEmpty, s"apps weren't empty: ${apps.entityPrettyJsonString}")
+      val groups = marathon.listGroupsInBaseGroup
+      require(groups.value.isEmpty, s"groups weren't empty: ${groups.entityPrettyJsonString}")
+      ProcessKeeper.stopJavaProcesses("mesosphere.marathon.integration.setup.AppMock")
+
+      if (withSubscribers) marathon.listSubscribers.value.urls.foreach(marathon.unsubscribe)
+      events.clear()
+      ExternalMarathonIntegrationTest.healthChecks.clear()
     }
-
-    waitForCleanSlateInMesos()
-
-    val apps = marathon.listAppsInBaseGroup
-    require(apps.value.isEmpty, s"apps weren't empty: ${apps.entityPrettyJsonString}")
-    val groups = marathon.listGroupsInBaseGroup
-    require(groups.value.isEmpty, s"groups weren't empty: ${groups.entityPrettyJsonString}")
-    ProcessKeeper.stopJavaProcesses("mesosphere.marathon.integration.setup.AppMock")
-
-    if (withSubscribers) marathon.listSubscribers.value.urls.foreach(marathon.unsubscribe)
-    events.clear()
-    ExternalMarathonIntegrationTest.healthChecks.clear()
     log.info("CLEAN UP finished !!!!!!!!!")
   }
 
