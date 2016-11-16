@@ -37,7 +37,7 @@ class NetworkConversionTest extends MarathonSpec {
     val raml = port.toRaml[IpDiscoveryPort]
     raml.name should be(port.name)
     raml.number should be(port.number)
-    raml.protocol should be(NetworkProtocol.Udp)
+    raml.protocol should be(NetworkProtocol.Tcp)
   }
 
   test("DiscoveryInfo is converted correctly") {
