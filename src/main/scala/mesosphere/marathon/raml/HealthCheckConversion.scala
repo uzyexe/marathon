@@ -72,10 +72,10 @@ trait HealthCheckConversion {
 
     val partialCheck = HealthCheck(
       gracePeriodSeconds = check.gracePeriod.toSeconds,
-      intervalSeconds = check.interval.toSeconds.toInt,
+      intervalSeconds = check.interval.toSeconds,
       maxConsecutiveFailures = check.maxConsecutiveFailures,
-      timeoutSeconds = check.timeout.toSeconds.toInt,
-      delaySeconds = check.delay.toSeconds.toInt
+      timeoutSeconds = check.timeout.toSeconds,
+      delaySeconds = check.delay.toSeconds
     )
     check match {
       case httpCheck: MesosHttpHealthCheck =>
@@ -101,6 +101,62 @@ trait HealthCheckConversion {
           ))
         )
     }
+  }
+
+  implicit val appHealthCheckWrites: Writes[core.health.HealthCheck, AppHealthCheck] = Writes { health =>
+
+    implicit val commandCheckWrites: Writes[state.Executable, CommandCheck] = Writes {
+      case state.Command(value) => CommandCheck(value)
+      case state.ArgvList(args) => throw SerializationFailedException("serialization of ArgvList not supported")
+    }
+
+    import Protos.HealthCheckDefinition.{ Protocol => ProtocolProto }
+    implicit val protocolWrites: Writes[ProtocolProto, AppHealthCheckProtocol] = Writes {
+      case ProtocolProto.COMMAND => AppHealthCheckProtocol.Command
+      case ProtocolProto.HTTP => AppHealthCheckProtocol.Http
+      case ProtocolProto.HTTPS => AppHealthCheckProtocol.Https
+      case ProtocolProto.TCP => AppHealthCheckProtocol.Tcp
+      case ProtocolProto.MESOS_HTTP => AppHealthCheckProtocol.MesosHttp
+      case ProtocolProto.MESOS_HTTPS => AppHealthCheckProtocol.MesosHttps
+      case ProtocolProto.MESOS_TCP => AppHealthCheckProtocol.MesosTcp
+    }
+
+    def create(
+      protocol: AppHealthCheckProtocol,
+      command: Option[CommandCheck] = None,
+      ignoreHttp1xx: Option[Boolean] = None,
+      path: Option[String] = None,
+      port: Option[Int] = None,
+      portReference: Option[PortReference] = None): AppHealthCheck = {
+      val portIndex = portReference.collect{ case index: PortReference.ByIndex => index.value }
+      AppHealthCheck(
+        gracePeriodSeconds = health.gracePeriod.toSeconds,
+        command = command,
+        ignoreHttp1xx = ignoreHttp1xx,
+        intervalSeconds = health.interval.toSeconds,
+        maxConsecutiveFailures = health.maxConsecutiveFailures,
+        path = path,
+        port = port,
+        portIndex = portIndex,
+        protocol = protocol,
+        timeoutSeconds = health.timeout.toSeconds
+      )
+    }
+
+    import raml.{ AppHealthCheckProtocol => AHCP }
+    health match {
+      case hc: MarathonHttpHealthCheck => create(hc.protocol.toRaml[AppHealthCheckProtocol], ignoreHttp1xx = Some(hc.ignoreHttp1xx), path = hc.path, port = hc.port, portReference = hc.portIndex)
+      case hc: MarathonTcpHealthCheck => create(AHCP.Tcp, port = hc.port, portReference = hc.portIndex)
+      case hc: MesosCommandHealthCheck => create(AHCP.Command, command = Some(hc.command.toRaml))
+      case hc: MesosHttpHealthCheck => create(hc.protocol.toRaml[AppHealthCheckProtocol], path = hc.path, port = hc.port, portReference = hc.portIndex)
+      case hc: MesosTcpHealthCheck => create(AHCP.MesosTcp, port = hc.port, portReference = hc.portIndex)
+    }
+  }
+
+  import Protos.ResidencyDefinition.{ TaskLostBehavior => TaskLostProto }
+  implicit val taskLostBehaviorWrites: Writes[TaskLostProto, TaskLostBehavior] = Writes {
+    case TaskLostProto.WAIT_FOREVER => TaskLostBehavior.WaitForever
+    case TaskLostProto.RELAUNCH_AFTER_TIMEOUT => TaskLostBehavior.RelaunchAfterTimeout
   }
 }
 

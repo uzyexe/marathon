@@ -29,7 +29,7 @@ trait QueueInfoConversion extends DefaultConversions {
       OfferResource(resource.getName, resource.getRole, scalar, ranges, set)
     resource.getType match {
       case Mesos.Value.Type.SCALAR => create(Some(resource.getScalar.getValue), None, None)
-      case Mesos.Value.Type.RANGES => create(None, Some(Raml.toRaml(resource.getRanges.getRangeList.toSeq)), None)
+      case Mesos.Value.Type.RANGES => create(None, Some(resource.getRanges.getRangeList.toRaml), None)
       case Mesos.Value.Type.SET => create(None, None, Some(resource.getSet.getItemList.toSeq))
       case _ => create(None, None, None)
     }
@@ -40,7 +40,7 @@ trait QueueInfoConversion extends DefaultConversions {
       AgentAttribute(attribute.getName, text, scalar, ranges, set)
     attribute.getType match {
       case Mesos.Value.Type.SCALAR => create(Some(attribute.getScalar.getValue), None, None, None)
-      case Mesos.Value.Type.RANGES => create(None, Some(Raml.toRaml(attribute.getRanges.getRangeList.toSeq)), None, None)
+      case Mesos.Value.Type.RANGES => create(None, Some(attribute.getRanges.getRangeList.toRaml), None, None)
       case Mesos.Value.Type.SET => create(None, None, Some(attribute.getSet.getItemList.toSeq), None)
       case Mesos.Value.Type.TEXT => create(None, None, None, Option(attribute.getText.getValue))
     }
@@ -51,8 +51,8 @@ trait QueueInfoConversion extends DefaultConversions {
       offer.getId.getValue,
       offer.getHostname,
       offer.getSlaveId.getValue,
-      Raml.toRaml(offer.getResourcesList.toSeq),
-      Raml.toRaml(offer.getAttributesList.toSeq)
+      offer.getResourcesList.toRaml,
+      offer.getAttributesList.toRaml
     )
   }
 
