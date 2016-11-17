@@ -71,11 +71,11 @@ trait HealthCheckConversion {
       }
 
     val partialCheck = HealthCheck(
-      gracePeriodSeconds = check.gracePeriod.toSeconds,
-      intervalSeconds = check.interval.toSeconds,
+      gracePeriodSeconds = check.gracePeriod.toSeconds.toInt,
+      intervalSeconds = check.interval.toSeconds.toInt,
       maxConsecutiveFailures = check.maxConsecutiveFailures,
-      timeoutSeconds = check.timeout.toSeconds,
-      delaySeconds = check.delay.toSeconds
+      timeoutSeconds = check.timeout.toSeconds.toInt,
+      delaySeconds = check.delay.toSeconds.toInt
     )
     check match {
       case httpCheck: MesosHttpHealthCheck =>
@@ -130,16 +130,16 @@ trait HealthCheckConversion {
       portReference: Option[PortReference] = None): AppHealthCheck = {
       val portIndex = portReference.collect{ case index: PortReference.ByIndex => index.value }
       AppHealthCheck(
-        gracePeriodSeconds = health.gracePeriod.toSeconds,
+        gracePeriodSeconds = health.gracePeriod.toSeconds.toInt,
         command = command,
         ignoreHttp1xx = ignoreHttp1xx,
-        intervalSeconds = health.interval.toSeconds,
+        intervalSeconds = health.interval.toSeconds.toInt,
         maxConsecutiveFailures = health.maxConsecutiveFailures,
         path = path,
         port = port,
         portIndex = portIndex,
         protocol = protocol,
-        timeoutSeconds = health.timeout.toSeconds
+        timeoutSeconds = health.timeout.toSeconds.toInt
       )
     }
 

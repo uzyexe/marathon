@@ -28,14 +28,14 @@ types:
         default: http-api
       intervalSeconds?:
         type: integer
-        format: int64
+        format: int32
         minimum: 0
         default: 30
         description: |
           Number of seconds to wait between readiness checks.
       timeoutSeconds?:
         type: integer
-        format: int64
+        format: int32
         default: 10
         description: |
           Number of seconds after which a health check is considered a failure

@@ -19,7 +19,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Secr
   }
 
   implicit val appResidencyWrites: Writes[Residency, AppResidency] = Writes { residency =>
-    AppResidency(residency.relaunchEscalationTimeoutSeconds, residency.taskLostBehavior.toRaml)
+    AppResidency(residency.relaunchEscalationTimeoutSeconds.toInt, residency.taskLostBehavior.toRaml)
   }
 
   implicit val versionInfoWrites: Writes[state.VersionInfo, VersionInfo] = Writes {
@@ -38,7 +38,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Secr
       acceptedResourceRoles = if (app.acceptedResourceRoles.nonEmpty) Some(app.acceptedResourceRoles.to[Seq]) else None,
       args = app.args,
       backoffFactor = app.backoffStrategy.factor,
-      backoffSeconds = app.backoffStrategy.backoff.toSeconds,
+      backoffSeconds = app.backoffStrategy.backoff.toSeconds.toInt,
       cmd = app.cmd,
       constraints = app.constraints.toRaml[Seq[Seq[String]]],
       container = app.container.toRaml,
@@ -51,7 +51,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Secr
       healthChecks = app.healthChecks.toRaml,
       instances = app.instances,
       labels = app.labels,
-      maxLaunchDelaySeconds = app.backoffStrategy.maxLaunchDelay.toSeconds,
+      maxLaunchDelaySeconds = app.backoffStrategy.maxLaunchDelay.toSeconds.toInt,
       mem = app.resources.mem,
       gpus = app.resources.gpus,
       ipAddress = app.ipAddress.toRaml,
@@ -62,7 +62,7 @@ trait AppConversion extends ConstraintConversion with EnvVarConversion with Secr
       requirePorts = Some(app.requirePorts),
       secrets = app.secrets.toRaml,
       storeUrls = app.storeUrls,
-      taskKillGracePeriodSeconds = app.taskKillGracePeriod.map(_.toSeconds),
+      taskKillGracePeriodSeconds = app.taskKillGracePeriod.map(_.toSeconds.toInt),
       upgradeStrategy = Some(app.upgradeStrategy.toRaml),
       uris = app.fetch.map(_.uri),
       user = app.user,

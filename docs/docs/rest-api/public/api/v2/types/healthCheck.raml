@@ -33,7 +33,7 @@ types:
       exec?: CommandHealthCheck
       gracePeriodSeconds?:
         type: integer
-        format: int64
+        format: int32
         description: |
           Health check failures are ignored within this number of seconds of
           the task being started or until the task becomes healthy for the
@@ -42,8 +42,8 @@ types:
         default: 300
       intervalSeconds?:
         type: integer
-        format: int64
-        description: Interval between the hralth checks
+        format: int32
+        description: Interval between the health checks
         minimum: 0
         default: 60
       maxConsecutiveFailures?:
@@ -54,13 +54,13 @@ types:
         default: 3
       timeoutSeconds?:
         type: integer
-        format: int64
+        format: int32
         description: Amount of time to wait for the health check to complete.
         minimum: 0
         default: 20
       delaySeconds?:
         type: integer
-        format: int64
+        format: int32
         description: Amount of time to wait until starting the health checks.
         minimum: 0
         default: 2
@@ -84,7 +84,7 @@ types:
       command?: CommandCheck
       gracePeriodSeconds:
         type: integer
-        format: int64
+        format: int32
         description: |
           Health check failures are ignored within this number of seconds of
           the task being started or until the task becomes healthy for the
@@ -96,7 +96,7 @@ types:
         description: Ignore HTTP 1xx responses
       intervalSeconds:
         type: integer
-        format: int64
+        format: int32
         description: Number of seconds to wait between health checks
         minimum: 0
         default: 60
@@ -131,7 +131,7 @@ types:
         default: HTTP
       timeoutSeconds:
         type: integer
-        format: int64
+        format: int32
         default: 20
         description: |
           Number of seconds after which a health check is considered a failure

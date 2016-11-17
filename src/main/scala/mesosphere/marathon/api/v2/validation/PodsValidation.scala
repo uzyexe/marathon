@@ -114,12 +114,12 @@ trait PodsValidation {
   }
 
   def healthCheckValidator(endpoints: Seq[Endpoint]) = validator[HealthCheck] { hc =>
-    hc.gracePeriodSeconds should be >= 0L
-    hc.intervalSeconds should be >= 0L
+    hc.gracePeriodSeconds should be >= 0
+    hc.intervalSeconds should be >= 0
     hc.timeoutSeconds should be < hc.intervalSeconds
     hc.maxConsecutiveFailures should be >= 0
-    hc.timeoutSeconds should be >= 0L
-    hc.delaySeconds should be >= 0L
+    hc.timeoutSeconds should be >= 0
+    hc.delaySeconds should be >= 0
     hc.http is optional(httpHealthCheckValidator(endpoints))
     hc.tcp is optional(tcpHealthCheckValidator(endpoints))
     hc.exec is optional(commandCheckValidator)
