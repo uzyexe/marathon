@@ -15,7 +15,7 @@ types:
       onePerAgent:
         fieldName: hostname
         operator: UNIQUE
-  ConstraintStringArray:
+  AppConstraint:
     description: |
       v2 App defined constraints as a 2 or 3 element array
       with [fieldName, ConstraintOperator(,value?)].
@@ -24,3 +24,11 @@ types:
     minItems: 2
     maxItems: 3
     example: ["hostname", "UNIQUE"]
+  VolumeConstraint:
+    description: |
+      Constrain which volume to choose on the agent.
+      Currently, it is only possible to constrain the path of the disk resource by regular expression.
+    type: array
+    items: string
+    minItems: 2
+    maxItems: 3
