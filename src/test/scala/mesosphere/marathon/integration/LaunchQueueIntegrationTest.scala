@@ -1,10 +1,10 @@
-package mesosphere.marathon.integration
+package mesosphere.marathon
+package integration
 
-import mesosphere.marathon.Protos
-import mesosphere.marathon.Protos.Constraint.Operator
 import mesosphere.marathon.integration.setup._
-import mesosphere.marathon.state.AppDefinition
+import mesosphere.marathon.raml.App
 import org.scalatest.{ GivenWhenThen, Matchers }
+
 import scala.concurrent.duration._
 
 class LaunchQueueIntegrationTest extends IntegrationFunSuite with SingleMarathonIntegrationTest with GivenWhenThen with Matchers {
@@ -22,9 +22,9 @@ class LaunchQueueIntegrationTest extends IntegrationFunSuite with SingleMarathon
 
   test("GET /v2/queue with pending app") {
     Given("a new app with constraints that cannot be fulfilled")
-    val c = Protos.Constraint.newBuilder().setField("nonExistent").setOperator(Operator.CLUSTER).setValue("na").build()
+    val c = Seq("nonExistent", "CLUSTER", "na")
     val appId = testBasePath / "app"
-    val app = AppDefinition(appId, constraints = Set(c), cmd = Some("na"), instances = 5, portDefinitions = List.empty)
+    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = Nil)
     val create = marathon.createAppV2(app)
     create.code should be (201) // Created
 

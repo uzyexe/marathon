@@ -20,11 +20,11 @@ trait NetworkValidation {
 
   /** changes here should be reflected in [[ramlNetworkValidator]] **/
   implicit val modelNetworkValidator: Validator[pod.Network] = new Validator[pod.Network] {
-    implicit val containerNetworkValidator: Validator[pod.ContainerNetwork] = validator[pod.ContainerNetwork] { net =>
+    val containerNetworkValidator: Validator[pod.ContainerNetwork] = validator[pod.ContainerNetwork] { net =>
       net.name is valid(validName)
     }
     override def apply(net: pod.Network): Result = net match {
-      case ct: pod.ContainerNetwork => validate(ct)
+      case ct: pod.ContainerNetwork => validate(ct)(containerNetworkValidator)
       case _ => Success // remaining network types don't have validation yet
     }
   }
@@ -47,23 +47,23 @@ trait NetworkValidation {
       val unnamedAtMostOnce = nets.count { n => n.name.isEmpty && n.mode == NetworkMode.Container } < 2
       val realNamesAtMostOnce: Boolean = !nets.flatMap(_.name).groupBy(name => name).exists(_._2.size > 1)
       unnamedAtMostOnce && realNamesAtMostOnce
-    } and isTrue[Seq[Network]]("Must specify either a single host network, single bridge network, or else 1-to-n container networks") { nets =>
+    } and isTrue[Seq[Network]]("May specify a single host network, single bridge network, or else 1-to-n container networks") { nets =>
       val countsByMode = nets.groupBy { net => net.mode }.mapValues(_.size)
       val hostNetworks = countsByMode.getOrElse(NetworkMode.Host, 0)
       val bridgeNetworks = countsByMode.getOrElse(NetworkMode.ContainerBridge, 0)
       val containerNetworks = countsByMode.getOrElse(NetworkMode.Container, 0)
-      (hostNetworks == 1 && bridgeNetworks == 0 && containerNetworks == 0) ||
-        (hostNetworks == 0 && bridgeNetworks == 1 && containerNetworks == 0) ||
+      (hostNetworks <= 1 && bridgeNetworks == 0 && containerNetworks == 0) ||
+        (hostNetworks == 0 && bridgeNetworks <= 1 && containerNetworks == 0) ||
         (hostNetworks == 0 && bridgeNetworks == 0 && containerNetworks > 0)
     }
 
-  /** changes here should be reflected in [[ramlNetworksValidator]] */
+  /** changes here should be reflected in [[ramlNetworksValidator]], except where the results are expected to have already been normalized for the model */
   implicit val modelNetworksValidator: Validator[Seq[pod.Network]] =
     isTrue[Seq[pod.Network]]("Duplicate networks are not allowed") { nets =>
       // unnamed CT nets should have already picked up the default virtual net name
       val realNamesAtMostOnce: Boolean = !nets.collect {
         case ct: pod.ContainerNetwork => ct.name
-      }.flatten.groupBy(name => name).exists(_._2.size > 1)
+      }.groupBy(name => name).exists(_._2.size > 1)
       realNamesAtMostOnce
     } and isTrue[Seq[pod.Network]]("Must specify either a single host network, single bridge network, or else 1-to-n container networks") { nets =>
       val countsByMode = nets.groupBy {

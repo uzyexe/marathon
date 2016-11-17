@@ -5,7 +5,7 @@ import mesosphere.marathon.api.serialization.{ ContainerSerializer, PortDefiniti
 import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.health.MesosHealthCheck
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.pod.{ BridgeNetwork, ContainerNetwork }
+import mesosphere.marathon.core.pod.{ BridgeNetwork, ContainerNetwork, HostNetwork }
 import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.plugin.task.RunSpecTaskProcessor
 import mesosphere.marathon.state._
@@ -191,7 +191,7 @@ class TaskBuilder(
       }
 
       // Set NetworkInfo if necessary
-      runSpec.networks.foreach { network =>
+      runSpec.networks.withFilter(_ != HostNetwork).foreach { network =>
         def generateLabels(from: Map[String, String]): Labels = Labels.newBuilder().addAllLabels(from.map {
           case (key, value) => Label.newBuilder.setKey(key).setValue(value).build()
         }).build()

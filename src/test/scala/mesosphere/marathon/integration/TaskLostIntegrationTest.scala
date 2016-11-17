@@ -2,11 +2,11 @@ package mesosphere.marathon
 package integration
 
 import mesosphere.Unstable
-import mesosphere.marathon.Protos.Constraint.Operator
 import mesosphere.marathon.UnstableTest
-import mesosphere.marathon.api.v2.json.AppUpdate
 import mesosphere.marathon.integration.facades.ITEnrichedTask
 import mesosphere.marathon.integration.setup._
+import mesosphere.marathon.raml.AppUpdate
+import mesosphere.marathon.state.PathId
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers }
 
 import scala.concurrent.duration._
@@ -83,19 +83,14 @@ class TaskLostIntegrationTest extends IntegrationFunSuite with WithMesosCluster 
 
   // regression test for https://github.com/mesosphere/marathon/issues/4059
   test("Scaling down an app with constraints and lost tasks will succeed") {
-    import mesosphere.marathon.Protos.Constraint
     Given("an app that is constrained to a unique hostname")
-    val constraint: Constraint = Constraint.newBuilder
-      .setField("hostname")
-      .setOperator(Operator.UNIQUE)
-      .setValue("")
-      .build
+    val constraint = Seq("hostname", "UNIQUE")
 
     // start both slaves
     if (!ProcessKeeper.hasProcess(slave1)) startSlave(slave1)
     if (!ProcessKeeper.hasProcess(slave2)) startSlave(slave2)
 
-    val app = appProxy(testBasePath / "app", "v1", instances = 2, withHealth = false).copy(constraints = Set(constraint))
+    val app = appProxy(testBasePath / "app", "v1", instances = 2, withHealth = false).copy(constraints = Seq(constraint))
 
     marathon.createAppV2(app)
     waitForEvent("deployment_success")
@@ -108,11 +103,11 @@ class TaskLostIntegrationTest extends IntegrationFunSuite with WithMesosCluster 
     waitForEventMatching("Task is declared lost") { matchEvent("TASK_UNREACHABLE", task) }
 
     When("We try to scale down to one instance")
-    marathon.updateApp(app.id, AppUpdate(instances = Some(1)))
-    waitForEventMatching("deployment to scale down should be triggered") { matchDeploymentStart(app.id.toString) }
+    marathon.updateApp(PathId(app.id), AppUpdate(instances = Some(1)))
+    waitForEventMatching("deployment to scale down should be triggered") { matchDeploymentStart(app.id) }
 
     Then("the deployment will eventually finish")
-    waitForEventMatching("app should be scaled and deployment should be finished") { matchDeploymentSuccess(1, app.id.toString) }
+    waitForEventMatching("app should be scaled and deployment should be finished") { matchDeploymentSuccess(1, app.id) }
     marathon.listDeploymentsForBaseGroup().value should have size 0
   }
 
@@ -130,10 +125,10 @@ class TaskLostIntegrationTest extends IntegrationFunSuite with WithMesosCluster 
     waitForEventMatching("Task is declared lost") { matchEvent("TASK_UNREACHABLE", task) }
 
     When("We try to scale down to one instance")
-    marathon.updateApp(app.id, AppUpdate(instances = Some(0)))
+    marathon.updateApp(PathId(app.id), AppUpdate(instances = Some(0)))
 
     Then("the deployment will eventually finish")
-    waitForEventMatching("app should be scaled and deployment should be finished") { matchDeploymentSuccess(1, app.id.toString) }
+    waitForEventMatching("app should be scaled and deployment should be finished") { matchDeploymentSuccess(1, app.id) }
     marathon.listDeploymentsForBaseGroup().value should have size 0
   }
 

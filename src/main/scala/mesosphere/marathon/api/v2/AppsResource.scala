@@ -11,7 +11,7 @@ import akka.event.EventStream
 import com.codahale.metrics.annotation.Timed
 import mesosphere.marathon.api.v2.Validation._
 import mesosphere.marathon.api.v2.validation.AppValidation
-import mesosphere.marathon.api.v2.json.AppUpdate
+import mesosphere.marathon.api.v2.json.AppUpdateHelper._
 import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.api.{ AuthResource, MarathonMediaType, RestResource }
 import mesosphere.marathon.core.appinfo.{ AppInfo, AppInfoService, AppSelector, Selector, TaskCounts }
@@ -80,33 +80,40 @@ class AppsResource @Inject() (
     @DefaultValue("false")@QueryParam("force") force: Boolean,
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
 
-    val rawApp: AppDefinition = Raml.fromRaml(preprocessApp(Json.parse(body).as[raml.App]))
-    withValid(rawApp.withCanonizedIds()) { appDef =>
-      val now = clock.now()
-      val app = appDef.copy(versionInfo = VersionInfo.OnlyVersion(now))
+    scala.util.Try[AppDefinition](Raml.fromRaml(preprocessApp(Json.parse(body).as[raml.App]))).map { rawApp =>
+      withValid(rawApp.withCanonizedIds()) { appDef =>
+        val now = clock.now()
+        val app = appDef.copy(versionInfo = VersionInfo.OnlyVersion(now))
 
-      checkAuthorization(CreateRunSpec, app)
+        checkAuthorization(CreateRunSpec, app)
 
-      def createOrThrow(opt: Option[AppDefinition]) = opt
-        .map(_ => throw ConflictingChangeException(s"An app with id [${app.id}] already exists."))
-        .getOrElse(app)
+        def createOrThrow(opt: Option[AppDefinition]) = opt
+          .map(_ => throw ConflictingChangeException(s"An app with id [${app.id}] already exists."))
+          .getOrElse(app)
 
-      val plan = result(groupManager.updateApp(app.id, createOrThrow, app.version, force))
+        val plan = result(groupManager.updateApp(app.id, createOrThrow, app.version, force))
 
-      val appWithDeployments = AppInfo(
-        app,
-        maybeCounts = Some(TaskCounts.zero),
-        maybeTasks = Some(Seq.empty),
-        maybeDeployments = Some(Seq(Identifiable(plan.id)))
-      )
+        val appWithDeployments = AppInfo(
+          app,
+          maybeCounts = Some(TaskCounts.zero),
+          maybeTasks = Some(Seq.empty),
+          maybeDeployments = Some(Seq(Identifiable(plan.id)))
+        )
 
-      maybePostEvent(req, appWithDeployments.app)
-      Response
-        .created(new URI(app.id.toString))
-        .header(RestResource.DeploymentHeader, plan.id)
-        .entity(jsonString(appWithDeployments))
-        .build()
-    }
+        maybePostEvent(req, appWithDeployments.app)
+        Response
+          .created(new URI(app.id.toString))
+          .header(RestResource.DeploymentHeader, plan.id)
+          .entity(jsonString(appWithDeployments))
+          .build()
+      }
+    }.recover {
+      // handle RAML validation errors
+      case vfe: ValidationFailedException =>
+        val entity = Json.toJson(vfe.failure).toString
+        Response.status(422).entity(entity).build()
+      case th => throw th
+    }.get
   }
 
   @GET
@@ -178,7 +185,7 @@ class AppsResource @Inject() (
     @DefaultValue("false")@QueryParam("force") force: Boolean,
     body: Array[Byte],
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
-    val appUpdates = Json.parse(body).as[Seq[raml.AppUpdate]].map(upd => AppUpdate.withCanonizedIds(preprocess(upd)))
+    val appUpdates = Json.parse(body).as[Seq[raml.AppUpdate]].map(upd => withCanonizedIds(preprocess(upd)))
     withValid(appUpdates) { updates =>
       val version = clock.now()
 
@@ -245,11 +252,7 @@ class AppsResource @Inject() (
     existing: Option[AppDefinition],
     appUpdate: raml.AppUpdate)(implicit identity: Identity): AppDefinition = {
     def createApp(): AppDefinition = {
-      // TODO(jdef) if we convert (raml.AppUpdate, state.AppDefinition) to state.AppDefinition, then validation
-      // is required for models in addition to RAMLs :( :( :(   If we convert (raml.AppUdate, raml.App) to raml.App
-      // then we're implying a convertion from state.AppDefinition to raml.App in order to apply the update, validate,
-      // then convert back to AppDefinition (which seems proper but also more computing effort!)
-      val app = validateOrThrow(AppUpdate.withoutPriorAppDefinition(appUpdate, appId))
+      val app = validateOrThrow(withoutPriorAppDefinition(appUpdate, appId))
       checkAuthorization(CreateRunSpec, app)
     }
 

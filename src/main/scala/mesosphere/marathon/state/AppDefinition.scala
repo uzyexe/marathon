@@ -86,6 +86,8 @@ case class AppDefinition(
 
   import mesosphere.mesos.protos.Implicits._
 
+  require(networks.nonEmpty, "an application must declare requisite networks")
+
   require(
     (!networks.exists(!_.eq(HostNetwork))) || portDefinitions.isEmpty,
     s"non-host-mode networking ($networks) and ports/portDefinitions ($portDefinitions) are not allowed at the same time")
@@ -480,7 +482,10 @@ object AppDefinition extends GeneralPurposeCombinators {
     */
   val DefaultAcceptedResourceRoles = Set.empty[String]
 
-  val DefaultNetworks = Seq.empty[Network]
+  /**
+    * should be kept in sync with [[mesosphere.marathon.api.v2.AppNormalization.DefaultNetworks]]
+    */
+  val DefaultNetworks = Seq[Network](HostNetwork)
 
   val DefaultResidency = Option.empty[Residency]
 

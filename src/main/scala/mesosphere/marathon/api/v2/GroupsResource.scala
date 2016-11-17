@@ -10,7 +10,7 @@ import javax.ws.rs.core.{ Context, Response }
 import com.codahale.metrics.annotation.Timed
 import mesosphere.marathon.api.v2.InfoEmbedResolver._
 import mesosphere.marathon.api.v2.json.Formats._
-import mesosphere.marathon.api.v2.json.GroupUpdate
+import mesosphere.marathon.api.v2.json.GroupUpdateHelper
 import mesosphere.marathon.api.{ AuthResource, MarathonMediaType }
 import mesosphere.marathon.core.appinfo.{ GroupInfo, GroupInfoService, Selector }
 import mesosphere.marathon.core.group.GroupManager
@@ -80,6 +80,7 @@ class GroupsResource @Inject() (
 
   /**
     * Get a specific group, optionally with specific version
+    *
     * @param id the identifier of the group encoded as path
     * @return the group or the group versions.
     */
@@ -136,6 +137,7 @@ class GroupsResource @Inject() (
 
   /**
     * Create a new group.
+    *
     * @param force if the change has to be forced. A running upgrade process will be halted and the new one is started.
     * @param body the request body as array byte buffer
     */
@@ -157,6 +159,7 @@ class GroupsResource @Inject() (
   /**
     * Create a group.
     * If the path to the group does not exist, it gets created.
+    *
     * @param id is the identifier of the the group to update.
     * @param force if the change has to be forced. A running upgrade process will be halted and the new one is started.
     * @param body the request body as array byte buffer
@@ -188,7 +191,7 @@ class GroupsResource @Inject() (
 
       val (deployment, path) = updateOrCreate(id.toRootPath, groupUpdate, force)
       deploymentResult(deployment, Response.created(new URI(path.toString)))
-    }(GroupUpdate.validNestedGroupUpdateWithBase(id.toRootPath, config.availableFeatures))
+    }(GroupUpdateHelper.validNestedGroupUpdateWithBase(id.toRootPath, config.availableFeatures))
   }
 
   @PUT
@@ -204,6 +207,7 @@ class GroupsResource @Inject() (
   /**
     * Create or update a group.
     * If the path to the group does not exist, it gets created.
+    *
     * @param id is the identifier of the the group to update.
     * @param force if the change has to be forced. A running upgrade process will be halted and the new one is started.
     * @param dryRun only create the deployment without executing it.
@@ -237,7 +241,7 @@ class GroupsResource @Inject() (
         val (deployment, _) = updateOrCreate(id.toRootPath, groupUpdate, force)
         deploymentResult(deployment)
       }
-    }(GroupUpdate.validNestedGroupUpdateWithBase(id.toRootPath, config.availableFeatures))
+    }(GroupUpdateHelper.validNestedGroupUpdateWithBase(id.toRootPath, config.availableFeatures))
   }
 
   @DELETE
@@ -261,6 +265,7 @@ class GroupsResource @Inject() (
 
   /**
     * Delete a specific subtree or a complete tree.
+    *
     * @param id the identifier of the group to delete encoded as path
     * @param force if the change has to be forced. A running upgrade process will be halted and the new one is started.
     * @return A version response, which defines the resulting change.
@@ -351,7 +356,7 @@ object GroupsResource {
   }
 
   case class AppsResourceContext(enabledFeatures: Set[String], config: AppNormalization.Config)
-    extends GroupConversion.Context {
+      extends GroupConversion.Context {
 
     /** convert app to canonical form */
     val preprocessor: (raml.App => raml.App) = AppsResource.preprocessor(enabledFeatures, config)

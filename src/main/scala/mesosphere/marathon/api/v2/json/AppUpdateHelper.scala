@@ -4,7 +4,7 @@ package api.v2.json
 import mesosphere.marathon.raml.{ AppConversion, Raml }
 import mesosphere.marathon.state._
 
-object AppUpdate {
+object AppUpdateHelper {
   /*
   // The versionInfo may never be overridden by an AppUpdate.
   // Setting the version in AppUpdate means that the user wants to revert to that version. In that
@@ -37,6 +37,4 @@ object AppUpdate {
     id = update.id.map(id => PathId(id).canonicalPath(base).toString),
     dependencies = update.dependencies.map(_.map(dep => PathId(dep).canonicalPath(base).toString))
   )
-
-
 }

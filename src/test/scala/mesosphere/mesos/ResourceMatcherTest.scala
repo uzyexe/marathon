@@ -4,6 +4,7 @@ import mesosphere.marathon.Protos.Constraint
 import mesosphere.marathon.Protos.Constraint.Operator
 import mesosphere.marathon.core.instance.{ Instance, TestInstanceBuilder }
 import mesosphere.marathon.core.launcher.impl.TaskLabels
+import mesosphere.marathon.core.pod.{ BridgeNetwork, ContainerNetwork }
 import mesosphere.marathon.core.task.Task
 import mesosphere.marathon.raml.Resources
 import mesosphere.marathon.state.PathId._
@@ -16,7 +17,7 @@ import mesosphere.mesos.ResourceMatcher.ResourceSelector
 import mesosphere.mesos.protos.Implicits._
 import mesosphere.mesos.protos.{ Resource, TextAttribute }
 import mesosphere.util.state.FrameworkId
-import org.apache.mesos.Protos.{ Attribute, ContainerInfo }
+import org.apache.mesos.Protos.Attribute
 import org.apache.mesos.{ Protos => Mesos }
 import org.scalatest.{ Inside, Matchers }
 
@@ -75,9 +76,9 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
       id = "/test".toRootPath,
       resources = Resources(cpus = 1.0, mem = 128.0, disk = 0.0),
       portDefinitions = Nil,
+      networks = Seq(BridgeNetwork()),
       container = Some(Container.Docker(
         image = "foo/bar",
-        network = Some(ContainerInfo.DockerInfo.Network.BRIDGE),
         portMappings = Seq(
           Container.PortMapping(31001, Some(0), 0, "tcp", Some("qax")),
           Container.PortMapping(31002, Some(0), 0, "tcp", Some("qab"))
@@ -103,9 +104,9 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
       id = "/test".toRootPath,
       resources = Resources(cpus = 1.0, mem = 128.0, disk = 0.0),
       portDefinitions = Nil,
+      networks = Seq(ContainerNetwork("whatever")),
       container = Some(Container.Docker(
         image = "foo/bar",
-        network = Some(ContainerInfo.DockerInfo.Network.USER),
         portMappings = Seq(
           Container.PortMapping(0, Some(0), 0, "tcp", Some("yas")),
           Container.PortMapping(31001, None, 0, "tcp", Some("qax")),
@@ -158,7 +159,7 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
     resourceMatchResponse shouldBe a[ResourceMatchResponse.Match]
     val res = resourceMatchResponse.asInstanceOf[ResourceMatchResponse.Match].resourceMatch
 
-    res.scalarMatches should have size (3)
+    res.scalarMatches should have size 3
     res.scalarMatch(Resource.CPUS).get.consumed.toSet should be(
       Set(
         GeneralScalarMatch.Consumption(1.0, "marathon", reservation = Some(cpuReservation)),
@@ -217,7 +218,7 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
     resourceMatchResponse shouldBe a[ResourceMatchResponse.Match]
     val res = resourceMatchResponse.asInstanceOf[ResourceMatchResponse.Match].resourceMatch
 
-    res.scalarMatches should have size (3)
+    res.scalarMatches should have size 3
     res.scalarMatch(Resource.CPUS).get.consumed.toSet should be(
       Set(
         GeneralScalarMatch.Consumption(1.0, "marathon", reservation = Some(cpuReservation)),
@@ -654,7 +655,7 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
       build()
 
     val offerSufficeWithMultOffers =
-      offerDisksTooSmall.toBuilder().
+      offerDisksTooSmall.toBuilder.
         // add another resource for /path2, in addition to the resources from the previous offer
         addResources(MarathonTestHelper.scalarResource("disk", 500,
           disk = Some(MarathonTestHelper.pathDisk("/path2")))).
@@ -689,10 +690,10 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
       ResourceSelector.reservable)
 
     resourceMatchResponse shouldBe a[ResourceMatchResponse.Match]
-    resourceMatchResponse.asInstanceOf[ResourceMatchResponse.Match].resourceMatch.scalarMatch("disk").get.consumed.toSet shouldBe (
-      Set(
-        DiskResourceMatch.Consumption(1024.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume)),
-        DiskResourceMatch.Consumption(476.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume))))
+    resourceMatchResponse.asInstanceOf[ResourceMatchResponse.Match].resourceMatch.scalarMatch("disk").get.consumed.toSet shouldBe Set(
+      DiskResourceMatch.Consumption(1024.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume)),
+      DiskResourceMatch.Consumption(476.0, "*", None, DiskSource(DiskType.Path, Some("/path2")), Some(volume))
+    )
   }
 
   test("match disk enforces constraints") {
@@ -771,7 +772,7 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
         matches.resourceMatch.scalarMatches.collectFirst {
           case m: DiskResourceMatch =>
             (m.consumedValue, m.consumed.head.persistentVolume.get.persistent.size)
-        } shouldBe (Some((1024, 1024)))
+        } shouldBe Some((1024, 1024))
     }
 
     ResourceMatcher.matchResources(
@@ -788,8 +789,7 @@ class ResourceMatcherTest extends MarathonSpec with Matchers with Inside {
   val appId = PathId("/test")
   def instance(id: String, version: Timestamp, attrs: Map[String, String]): Instance = { // linter:ignore:UnusedParameter
     val attributes: Seq[Attribute] = attrs.map {
-      case (name, value) =>
-        TextAttribute(name, value): Attribute
+      case (name, v) => TextAttribute(name, v): Attribute
     }(collection.breakOut)
     TestInstanceBuilder.newBuilder(appId, version = version).addTaskWithBuilder().taskStaged()
       .withAgentInfo(_.copy(attributes = attributes)).build().getInstance()

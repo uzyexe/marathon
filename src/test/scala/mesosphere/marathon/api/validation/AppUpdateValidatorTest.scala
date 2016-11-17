@@ -3,23 +3,23 @@ package api.validation
 
 import com.wix.accord.validate
 import mesosphere.UnitTest
-import mesosphere.marathon.api.v2.json.AppUpdate
-import mesosphere.marathon.api.v2.json.Formats._
+import mesosphere.marathon.api.v2.AppNormalization
+import mesosphere.marathon.api.v2.validation.AppValidation
 import mesosphere.marathon.core.plugin.PluginManager
-import mesosphere.marathon.state.Container.PortMapping
-import mesosphere.marathon.state.{ AppDefinition, Container, PathId }
+import mesosphere.marathon.raml.{ App, AppCContainer, AppUpdate, ContainerPortMapping, DockerPortProtocol, EngineType, Raml }
+import mesosphere.marathon.state.AppDefinition
 import org.scalatest.Matchers
 import play.api.libs.json.Json
 
 class AppUpdateValidatorTest extends UnitTest with Matchers {
-  implicit val appUpdateValidator = AppUpdate.appUpdateValidator(Set())
+  implicit val appUpdateValidator = AppValidation.validateCanonicalAppUpdateAPI(Set.empty)
   implicit val validAppDefinition = AppDefinition.validAppDefinition(Set.empty)(PluginManager.None)
 
   "validation that considers container types" should {
     "test that Docker container is validated" in {
       val f = new Fixture
       val update = AppUpdate(
-        id = Some(PathId("/test")),
+        id = Some("/test"),
         container = Some(f.invalidDockerContainer))
       assert(validate(update).isFailure)
     }
@@ -27,7 +27,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
     "test that AppC container is validated" in {
       val f = new Fixture
       val update = AppUpdate(
-        id = Some(PathId("/test")),
+        id = Some("/test"),
         container = Some(f.invalidAppCContainer))
       assert(validate(update).isFailure)
     }
@@ -69,9 +69,12 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
           |  ],
           |  "requirePorts": false
           |}
-        """.stripMargin).as[AppDefinition]
+        """.stripMargin).as[App]
 
-      val appUpdate = Json.parse(
+      val appDef = Raml.fromRaml(
+        AppNormalization.apply(AppNormalization.forDeprecatedFields(originalApp), AppNormalization.Config(None)))
+
+      val appUpdate = AppNormalization.apply(AppNormalization.forDeprecatedFields(Json.parse(
         """
           | {
           |	"id": "/sleepy-moby",
@@ -102,22 +105,25 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
           |	},
           |	"requirePorts": false
           |}
-        """.stripMargin).as[AppUpdate]
+        """.stripMargin).as[AppUpdate]), AppNormalization.Config(None))
 
-      assert(validate(appUpdate(originalApp)).isSuccess)
+      assert(validate(Raml.fromRaml(appUpdate -> appDef)).isSuccess)
     }
   }
 
   class Fixture {
-    def invalidDockerContainer: Container = Container.Docker(
+    def invalidDockerContainer: raml.Container = raml.Container(
+      EngineType.Docker,
       portMappings = Seq(
-        PortMapping(-1, Some(-1), -1, "tcp") // Invalid (negative) port numbers
+        ContainerPortMapping(
+          // Invalid (negative) port numbers
+          containerPort = -1, hostPort = Some(-1), servicePort = Some(-1), protocol = Some(DockerPortProtocol.Tcp))
       )
     )
 
-    def invalidAppCContainer: Container = Container.MesosAppC(
+    def invalidAppCContainer: raml.Container = raml.Container(EngineType.Mesos, appc = Some(AppCContainer(
       image = "anImage",
-      id = Some("invalidID")
+      id = Some("invalidID")))
     )
   }
 

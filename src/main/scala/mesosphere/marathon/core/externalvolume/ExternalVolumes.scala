@@ -2,7 +2,6 @@ package mesosphere.marathon
 package core.externalvolume
 
 import com.wix.accord._
-import mesosphere.marathon.api.v2.Validation
 import mesosphere.marathon.core.externalvolume.impl._
 import mesosphere.marathon.raml.AppVolume
 import mesosphere.marathon.state._
@@ -24,11 +23,13 @@ object ExternalVolumes {
       case None => Failure(Set(RuleViolation(None, "is unknown provider", Some("external/provider"))))
     }
   }
-  def validRamlVolume: Validator[AppVolume] = new Validator[AppVolume] {
-    import Validation._
+
+  def validRamlVolume(container: raml.Container): Validator[AppVolume] = new Validator[AppVolume] {
     def apply(ev: AppVolume) = ev.external.flatMap(_.provider.flatMap(providers.get)) match {
-      case Some(p) => validate(ev.external)(definedAnd(p.validations.ramlVolume))
-      case None => Failure(Set(RuleViolation(None, "is unknown provider", Some("external/provider"))))
+      case Some(p) =>
+        validate(ev)(p.validations.ramlVolume(container))
+      case None =>
+        Failure(Set(RuleViolation(None, "is unknown provider", Some("external/provider"))))
     }
   }
 

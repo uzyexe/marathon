@@ -59,7 +59,7 @@ trait AppValidation {
       docker.portMappings is valid(portMappingsValidator)
     }
     validator { (container: Container) =>
-      container.docker is definedAnd(validDockerEngineSpec)
+      container.docker is valid(definedAnd(validDockerEngineSpec))
     }
   }
 
@@ -68,7 +68,7 @@ trait AppValidation {
       docker.image is notEmpty
     }
     validator{ (container: Container) =>
-      container.docker is definedAnd(validMesosEngineSpec)
+      container.docker is valid(definedAnd(validMesosEngineSpec))
     }
   }
 
@@ -87,7 +87,7 @@ trait AppValidation {
       appc.id is optional(validId)
     }
     validator{ (container: Container) =>
-      container.appc is definedAnd(validMesosEngineSpec)
+      container.appc is valid(definedAnd(validMesosEngineSpec))
     }
   }
 
@@ -96,9 +96,9 @@ trait AppValidation {
     new NullSafeValidator[Container](_ => true, _ => Failure(Set.empty))
 
   def validContainer(enabledFeatures: Set[String]): Validator[Container] = {
-    val validGeneralContainer: Validator[ Container ] = validator[Container] { container =>
+    val validGeneralContainer: Validator[Container] = validator[Container] { container =>
       container.portMappings is portMappingsValidator
-      container.volumes is every(validVolume(enabledFeatures))
+      container.volumes is every(validVolume(container, enabledFeatures))
     }
 
     val validEngineWithImage = new Validator[Container] {
@@ -115,20 +115,20 @@ trait AppValidation {
     validGeneralContainer and validEngineWithImage
   }
 
-  def validVolume(enabledFeatures: Set[String]): Validator[AppVolume] = new Validator[AppVolume] {
+  def validVolume(container: Container, enabledFeatures: Set[String]): Validator[AppVolume] = new Validator[AppVolume] {
     import state.PathPatterns._
     val validHostVolume = validator[AppVolume] { v =>
-      v.containerPath is definedAnd(notEmpty)
-      v.hostPath is definedAnd(notEmpty)
+      v.containerPath is valid(definedAnd(notEmpty))
+      v.hostPath is valid(definedAnd(notEmpty))
     }
     val validPersistentVolume = {
       val notHaveConstraintsOnRoot = isTrue[PersistentVolume](
-      "Constraints on root volumes are not supported") { info =>
-        if (info.`type`.forall(_ == PersistentVolumeType.Root)) // default is Root, see AppConversion
-          info.constraints.isEmpty
-        else
-          true
-      }
+        "Constraints on root volumes are not supported") { info =>
+          if (info.`type`.forall(_ == PersistentVolumeType.Root)) // default is Root, see AppConversion
+            info.constraints.isEmpty
+          else
+            true
+        }
 
       val meetMaxSizeConstraint = isTrue[PersistentVolume]("Only mount volumes can have maxSize") { info =>
         info.`type`.contains(PersistentVolumeType.Mount) || info.maxSize.isEmpty
@@ -166,40 +166,37 @@ trait AppValidation {
       val validPersistentInfo = validator[PersistentVolume] { info =>
         info.size should be > 0
         info.constraints.each must complyWithVolumeConstraintRules
-        info should meetMaxSizeConstraint
-        info should notHaveConstraintsOnRoot
-        info should haveProperlyOrderedMaxSize
-      }
+      } and meetMaxSizeConstraint and notHaveConstraintsOnRoot and haveProperlyOrderedMaxSize
 
       validator[AppVolume] { v =>
-        v.containerPath is definedAnd(notEqualTo("") and notOneOf(DotPaths: _*))
-        v.containerPath is definedAnd(matchRegexWithFailureMessage(NoSlashesPattern, "value must not contain \"/\""))
+        v.containerPath is valid(definedAnd(notEqualTo("") and notOneOf(DotPaths: _*)))
+        v.containerPath is valid(definedAnd(matchRegexWithFailureMessage(NoSlashesPattern, "value must not contain \"/\"")))
         v.mode is optional(equalTo(ReadMode.Rw)) // see AppConversion, default is RW
-        v.persistent is definedAnd(validPersistentInfo)
+        v.persistent is valid(definedAnd(validPersistentInfo))
       }
     }
     val validExternalVolume: Validator[AppVolume] = {
       import state.OptionLabelPatterns._
-      val validOptions = validator[Map[String, String]] {
-        option => option.keys.each should matchRegex(OptionKeyRegex)
+      val validOptions = validator[Map[String, String]] { option =>
+        option.keys.each should matchRegex(OptionKeyRegex)
       }
       val validExternalInfo = validator[ExternalVolume] { info =>
         info.size should optional(be > 0)
-        info.name is definedAnd(matchRegex(LabelRegex))
-        info.provider is definedAnd(matchRegex(LabelRegex))
+        info.name is valid(definedAnd(matchRegex(LabelRegex)))
+        info.provider is valid(definedAnd(matchRegex(LabelRegex)))
         info.options is validOptions
       }
       validator[AppVolume] { v =>
-        v.containerPath is definedAnd(notEmpty)
-        v.external is definedAnd(validExternalInfo)
-        v is ExternalVolumes.validRamlVolume
-      } and featureEnabled(enabledFeatures, Features.EXTERNAL_VOLUMES)
+        v.containerPath is valid(definedAnd(notEmpty))
+        v.external is valid(definedAnd(validExternalInfo))
+      } and conditional[AppVolume](_.external.exists(_.provider.nonEmpty))(ExternalVolumes.validRamlVolume(container)
+      ) and featureEnabled(enabledFeatures, Features.EXTERNAL_VOLUMES)
     }
     override def apply(v: AppVolume): Result = {
       (v.persistent, v.external) match {
         case (None, None) => validate(v)(validHostVolume)
-        case (Some(persistent), None) => validate(v)(validPersistentVolume)
-        case (None, Some(external)) => validate(v)(validExternalVolume)
+        case (Some(_), None) => validate(v)(validPersistentVolume)
+        case (None, Some(_)) => validate(v)(validExternalVolume)
         case _ => Failure(Set(RuleViolation(v, "illegal combination of persistent and external volume fields", None)))
       }
     }
@@ -215,7 +212,7 @@ trait AppValidation {
     validator[ReadinessCheck] { rc =>
       rc.name is notEmpty
       rc.path is notEmpty
-      rc.portName is definedAnd(portNameExists)
+      rc.portName is valid(definedAnd(portNameExists))
       rc.timeoutSeconds should be < rc.intervalSeconds
       rc.timeoutSeconds should (be > 0)
       rc.httpStatusCodesForReady is notEmpty
@@ -241,10 +238,13 @@ trait AppValidation {
     */
   def validateOldAppUpdateAPI: Validator[AppUpdate] = validator[AppUpdate] { update =>
     update.container.flatMap(_.docker.map(_.portMappings)) is optional(portMappingsValidator)
-    update.ipAddress is optional(validIpAddress)
+    update.ipAddress is optional(validIpAddress) and optional(isTrue(
+      "ipAddress/discovery is not allowed for Docker containers") { (ipAddress: IpAddress) =>
+        !(update.container.exists(c => c.`type` == EngineType.Docker) && ipAddress.discovery.nonEmpty)
+      })
     update.ports is optional(every(validPortNumber))
     update.uris is optional(every(ArtifactValidation.uriValidator))
-   } and isTrue("ports must be unique") { (update: AppUpdate) =>
+  } and isTrue("ports must be unique") { (update: AppUpdate) =>
     val withoutRandom = update.ports.fold(Seq.empty[Int])(_.filterNot(_ == AppDefinition.RandomPortValue))
     withoutRandom.distinct.size == withoutRandom.size
   } and isTrue("cannot specify both an IP address and port") { (update: AppUpdate) =>
@@ -270,7 +270,7 @@ trait AppValidation {
     update.dependencies.map(_.map(PathId(_))) as "dependencies" is optional(every(valid))
     update.env is optional(envValidator(update.secrets.getOrElse(Map.empty), enabledFeatures))
     update.secrets is optional(isTrue("secrets feature is required for using secrets with an application"){
-      (secrets: Map[String,SecretDef]) =>
+      (secrets: Map[String, SecretDef]) =>
         if (secrets.nonEmpty)
           validateOrThrow(secrets)(secretValidator and featureEnabled(enabledFeatures, Features.SECRETS))
         true
@@ -281,7 +281,7 @@ trait AppValidation {
     update.residency is optional(valid)
     update.portDefinitions is optional(portDefinitionsValidator)
     update.container is optional(validContainer(enabledFeatures))
-    update.acceptedResourceRoles is optional(ResourceRole.validAcceptedResourceRoles(update.residency.isDefined))
+    update.acceptedResourceRoles is optional(ResourceRole.validAcceptedResourceRoles(update.residency.isDefined) and notEmpty)
   } and isTrue("must not be root") { (update: AppUpdate) =>
     !update.id.fold(false)(PathId(_).isRoot)
   } and isTrue("must not be an empty string") { (update: AppUpdate) =>
@@ -290,6 +290,12 @@ trait AppValidation {
     !(app.networks.exists(_.exists(_.mode == NetworkMode.Host)) && app.container.exists(_.portMappings.nonEmpty))
   } and isTrue("portDefinitions are only allowed with host-networking") { (app: AppUpdate) =>
     !(app.networks.exists(_.exists(_.mode != NetworkMode.Host)) && app.portDefinitions.exists(_.nonEmpty))
+  } and isTrue("The 'version' field may only be combined with the 'id' field.") { (app: AppUpdate) =>
+    def onlyVersionOrIdSet: Boolean = app.productIterator.forall {
+      case x: Some[Any] => x == app.version || x == app.id // linter:ignore UnlikelyEquality
+      case _ => true
+    }
+    app.version.isEmpty || onlyVersionOrIdSet
   }
 
   /**
@@ -297,7 +303,10 @@ trait AppValidation {
     */
   val validateOldAppAPI: Validator[App] = validator[App] { app =>
     app.container.flatMap(_.docker.map(_.portMappings)) is optional(portMappingsValidator)
-    app.ipAddress is optional(validIpAddress)
+    app.ipAddress is optional(validIpAddress) and optional(isTrue(
+      "ipAddress/discovery is not allowed for Docker containers") { (ipAddress: IpAddress) =>
+        !(app.container.exists(c => c.`type` == EngineType.Docker) && ipAddress.discovery.nonEmpty)
+      })
     app.ports is every(validPortNumber)
     app.uris is every(ArtifactValidation.uriValidator)
   } and isTrue("must not specify both container.docker.network and networks") { (app: App) =>
@@ -319,8 +328,7 @@ trait AppValidation {
     app.executor should optional(matchRegexFully(executorPattern))
     PathId(app.id) as "id" is (PathId.pathIdValidator and PathId.absolutePathValidator)
     app.dependencies.map(PathId(_)) as "dependencies" is every(PathId.validPathWithBase(PathId(app.id).parent))
-    app is validBasicAppDefinition(enabledFeatures)
-  } and isTrue("must not be root") { (app: App) =>
+  } and validBasicAppDefinition(enabledFeatures) and isTrue("must not be root") { (app: App) =>
     !PathId(app.id).isRoot
   } and isTrue("must not be an empty string") { (app: App) =>
     app.cmd.forall { s => s.length() > 1 }
@@ -361,7 +369,7 @@ trait AppValidation {
     app.disk should optional(be >= 0.0)
     app.gpus should optional(be >= 0)
     app.secrets is valid(isTrue("secrets feature is required for using secrets with an application"){
-      (secrets: Map[String,SecretDef]) =>
+      (secrets: Map[String, SecretDef]) =>
         if (secrets.nonEmpty)
           validateOrThrow(secrets)(secretValidator and featureEnabled(enabledFeatures, Features.SECRETS))
         true
@@ -485,7 +493,7 @@ trait AppValidation {
     isTrue("Health check port indices must address an element of the ports array or container port mappings.") { check =>
       if (check.command.isEmpty && check.protocol.forall(marathonProtocols.contains)) {
         check.portIndex match {
-          case Some(idx) =>  hostPortsIndices.contains(idx)
+          case Some(idx) => hostPortsIndices.contains(idx)
           case _ => check.port.nonEmpty || (hostPortsIndices.length == 1 && hostPortsIndices.headOption.contains(0))
         }
       } else {
@@ -501,7 +509,7 @@ trait AppValidation {
       AppHealthCheckProtocol.MesosHttps,
       AppHealthCheckProtocol.MesosTcp)
 
-    isTrue[ App ]("AppDefinition can contain at most one Mesos health check") { app =>
+    isTrue[App]("AppDefinition can contain at most one Mesos health check") { app =>
       val mesosCommandHealthChecks = app.healthChecks.count(_.command.nonEmpty)
       val allMesosHealthChecks = app.healthChecks.count { check =>
         check.command.nonEmpty || check.protocol.exists(mesosProtocols.contains)
@@ -519,8 +527,8 @@ trait AppValidation {
       val container = app.container.exists { ct =>
         (ct.docker, ct.appc, ct.`type`) match {
           case (Some(_), None, EngineType.Docker) |
-               (Some(_), None, EngineType.Mesos) |
-               (None, Some(_), EngineType.Mesos) => true
+            (Some(_), None, EngineType.Mesos) |
+            (None, Some(_), EngineType.Mesos) => true
           case _ => false
         }
       }

@@ -784,7 +784,6 @@ trait AppAndGroupFormats {
     }
   )
 
-
   implicit lazy val taskLostBehaviorWrites = Writes[TaskLostBehavior] { taskLostBehavior =>
     JsString(taskLostBehavior.name())
   }
@@ -837,7 +836,6 @@ trait AppAndGroupFormats {
         "gpus" -> runSpec.resources.gpus,
         "executor" -> runSpec.executor,
         "constraints" -> runSpec.constraints,
-        "uris" -> runSpec.fetch.map(_.uri),
         "fetch" -> runSpec.fetch,
         "storeUrls" -> runSpec.storeUrls,
         "backoffSeconds" -> runSpec.backoffStrategy.backoff,
@@ -863,7 +861,6 @@ trait AppAndGroupFormats {
       // top-level ports fields are incompatible with IP/CT
       if (!runSpec.usesNonHostNetworking) {
         appJson = appJson ++ Json.obj(
-          "ports" -> runSpec.servicePorts,
           "portDefinitions" -> {
             if (runSpec.servicePorts.nonEmpty) {
               // zip with defaults here to avoid the possibility of generating invalid JSON,
@@ -986,7 +983,6 @@ trait AppAndGroupFormats {
       maybeJson.foldLeft(groupJson)((result, obj) => result ++ obj)
     }
 
-
   implicit lazy val GroupFormatWrites: Writes[Group] = (
     (__ \ "id").write[PathId] ~
     (__ \ "apps").writeNullable[Iterable[AppDefinition]] ~
@@ -994,16 +990,16 @@ trait AppAndGroupFormats {
     (__ \ "groups").lazyWriteNullable(implicitly[Writes[Iterable[Group]]]) ~
     (__ \ "dependencies").writeNullable[Set[PathId]] ~
     (__ \ "version").writeNullable[Timestamp]
-  ) ( { (g: Group) =>
-    (
-      g.id,
-      if (g.apps.values.isEmpty) None else Some(g.apps.values),
-      { val pods = g.pods.values.map(Raml.toRaml(_)); if (pods.isEmpty) None else Some(pods) },
-      if (g.groupsById.isEmpty) None else Some(g.groupsById.values),
-      if (g.dependencies.isEmpty) None else Some(g.dependencies),
-      Some(g.version)
-    )
-  } )
+  ) ({ (g: Group) =>
+      (
+        g.id,
+        if (g.apps.values.isEmpty) None else Some(g.apps.values),
+        { val pods = g.pods.values.map(Raml.toRaml(_)); if (pods.isEmpty) None else Some(pods) },
+        if (g.groupsById.isEmpty) None else Some(g.groupsById.values),
+        if (g.dependencies.isEmpty) None else Some(g.dependencies),
+        Some(g.version)
+      )
+    })
 
   implicit lazy val PortDefinitionFormat: Format[PortDefinition] = (
     (__ \ "port").formatNullable[Int].withDefault(AppDefinition.RandomPortValue) ~

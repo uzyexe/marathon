@@ -2,11 +2,11 @@ package mesosphere.mesos.scale
 
 import java.io.File
 
-import mesosphere.marathon.api.v2.json.AppUpdate
 import mesosphere.marathon.integration.facades.ITDeploymentResult
 import mesosphere.marathon.integration.facades.MarathonFacade._
 import mesosphere.marathon.integration.setup._
-import mesosphere.marathon.state.{ AppDefinition, PathId }
+import mesosphere.marathon.raml.{ App, AppUpdate }
+import mesosphere.marathon.state.PathId
 import org.scalatest.{ BeforeAndAfter, ConfigMap, GivenWhenThen, Matchers }
 import org.slf4j.LoggerFactory
 import play.api.libs.json._
@@ -58,7 +58,7 @@ class SingleAppScalingTest
     val app = appProxy(appIdPath, "v1", instances = instances, withHealth = false)
 
     When("the app gets posted")
-    val createdApp: RestResult[AppDefinition] = marathon.createAppV2(app)
+    val createdApp: RestResult[App] = marathon.createAppV2(app)
     createdApp.code should be(201) // created
     val deploymentIds: Seq[String] = extractDeploymentIds(createdApp)
     deploymentIds.length should be(1)

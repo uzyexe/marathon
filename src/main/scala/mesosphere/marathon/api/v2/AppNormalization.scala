@@ -34,9 +34,9 @@ trait AppNormalization {
     if (uris.fold(false)(_.nonEmpty) && fetch.fold(false)(_.nonEmpty))
       throw SerializationFailedException("cannot specify both uris and fetch fields")
     else
-       uris.fold(fetch){
-         uris => Some(uris.map(uri => Artifact(uri = uri, extract = Some(FetchUri.isExtract(uri)))))
-       }
+      uris.fold(fetch){
+        uris => Some(uris.map(uri => Artifact(uri = uri, extract = Some(FetchUri.isExtract(uri)))))
+      }
 
   /**
     * currently invoked prior to validation, so that we only validate portMappings once
@@ -143,16 +143,18 @@ trait AppNormalization {
     * @return an API object in canonical form (read: doesn't use deprecated APIs)
     */
   def forDeprecatedFields(app: App): App = {
+    import state.PathId._
     val fetch: Seq[Artifact] = normalizeFetch(Option(app.uris), Option(app.fetch)).getOrElse(Nil)
     val container = app.container.map(normalizeDocker)
-    val networks: Seq[ Network ] = NetworkTranslation.toNetworks(NetworkTranslation(
+    val networks: Seq[Network] = NetworkTranslation.toNetworks(NetworkTranslation(
       app.ipAddress,
       container.flatMap(_.docker.flatMap(_.network)),
-      Some(app.networks)
+      if (app.networks.isEmpty) None else Some(app.networks)
     )).getOrElse(Nil)
 
     // Normally, our default is one port. If an non-host networks are defined that would lead to an error
     // if left unchanged.
+    // TODO(jdef) we cannot tell whether a user is asking for a default port, or explicitly requesting ZERO ports
     def portDefinitions: Seq[PortDefinition] =
       if (networks.exists(_.mode != NetworkMode.Host))
         Nil
@@ -163,7 +165,15 @@ trait AppNormalization {
       else
         Seq(PortDefinition(port = Some(0)))
 
+    val healthChecks =
+      // for an app (not an update) only normalize if there are ports defined somewhere
+      if (portDefinitions.nonEmpty || container.exists(_.portMappings.nonEmpty)) normalizeHealthChecks(app.healthChecks)
+      else app.healthChecks
+
     app.copy(
+      // it's kind of cheating to do this here, but its required in order to pass canonical validation (that happens
+      // before canonical normalization)
+      id = app.id.toRootPath.toString,
       // normalize fetch
       fetch = fetch,
       uris = Nil,
@@ -175,7 +185,7 @@ trait AppNormalization {
       portDefinitions = portDefinitions,
       ports = Nil,
       // health checks
-      healthChecks = normalizeHealthChecks(app.healthChecks)
+      healthChecks = healthChecks
     )
   }
 
@@ -185,9 +195,9 @@ trait AppNormalization {
         case n: Network if n.name.isEmpty && n.mode == NetworkMode.Container => n.copy(name = config.defaultNetworkName)
         case n => n
       }
-    }.getOrElse(app.networks)
+    }.orElse(Some(app.networks)).filter(_.nonEmpty).getOrElse(DefaultNetworks)
 
-    val container = normalizePortMappings(Some(app.networks), app.container)
+    val container = normalizePortMappings(Some(networks), app.container)
 
     app.copy(
       container = container,
@@ -197,6 +207,11 @@ trait AppNormalization {
 }
 
 object AppNormalization extends AppNormalization {
+
+  /**
+    * should be kept in sync with [[mesosphere.marathon.state.AppDefinition.DefaultNetworks]]
+    */
+  val DefaultNetworks = Seq(Network(mode = NetworkMode.Host))
 
   case class Config(defaultNetworkName: Option[String])
 
@@ -211,7 +226,7 @@ object AppNormalization extends AppNormalization {
 
   object NetworkTranslation {
     def toNetworks(nt: NetworkTranslation): Option[Seq[Network]] = nt match {
-      case NetworkTranslation(Some(ipAddress), Some(networkType), _) =>
+      case NetworkTranslation(Some(ipAddress), Some(networkType), None) =>
         // wants ip/ct with a specific network mode
         import DockerNetwork._
         networkType match {
@@ -224,7 +239,7 @@ object AppNormalization extends AppNormalization {
           case unsupported =>
             throw SerializationFailedException(s"unsupported docker network type $unsupported")
         }
-      case NetworkTranslation(Some(ipAddress), None, _) =>
+      case NetworkTranslation(Some(ipAddress), None, None) =>
         // wants ip/ct with some network mode.
         // if the user gave us a name try to figure out what they want.
         ipAddress.networkName match {
@@ -233,7 +248,7 @@ object AppNormalization extends AppNormalization {
           case name =>
             Some(Seq(Network(mode = NetworkMode.Container, name = name)))
         }
-      case NetworkTranslation(None, Some(networkType), _) =>
+      case NetworkTranslation(None, Some(networkType), None) =>
         // user didn't ask for IP-per-CT, but specified a network type anyway
         import DockerNetwork._
         networkType match {
@@ -246,6 +261,8 @@ object AppNormalization extends AppNormalization {
       case NetworkTranslation(None, None, networks) =>
         // no deprecated APIs used! awesome, so use the canonical networks field
         networks
+      case _ =>
+        throw SerializationFailedException("cannot mix deprecated and canonical network APIs")
     }
   }
 }

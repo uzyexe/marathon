@@ -1,10 +1,10 @@
-package mesosphere.marathon.integration.setup
+package mesosphere.marathon
+package integration.setup
 
 import mesosphere.marathon.integration.facades.MarathonFacade
 import MarathonFacade._
-import mesosphere.marathon.raml.Resources
-import mesosphere.marathon.state.{ AppDefinition, Container }
 import mesosphere.marathon.integration.setup.ProcessKeeper.MesosConfig
+import mesosphere.marathon.raml.{ App, Container, DockerContainer, EngineType }
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers }
 
 import scala.concurrent.duration._
@@ -32,12 +32,13 @@ class DockerAppIntegrationTest
 
   test("deploy a simple Docker app") {
     Given("a new Docker app")
-    val app = AppDefinition(
-      id = testBasePath / "dockerapp",
+    val app = App(
+      id = (testBasePath / "dockerapp").toString,
       cmd = Some("sleep 600"),
-      container = Some(Container.Docker(image = "busybox")),
-      resources = Resources(cpus = 0.2, mem = 16.0),
-      instances = 1
+      container = Some(Container(`type` = EngineType.Docker, docker = Some(DockerContainer(image = "busybox")))),
+      cpus = Some(0.2),
+      mem = Some(16.0),
+      instances = Some(1)
     )
 
     When("The app is deployed")
@@ -53,7 +54,7 @@ class DockerAppIntegrationTest
   test("create a simple docker app using http health checks with HOST networking") {
     Given("a new app")
     val app = dockerAppProxy(testBasePath / "docker-http-app", "v1", instances = 1, withHealth = true)
-    val check = appProxyCheck(app.id, "v1", true)
+    val check = appProxyCheck(app.id, "v1", state = true)
 
     When("The app is deployed")
     val result = marathon.createAppV2(app)

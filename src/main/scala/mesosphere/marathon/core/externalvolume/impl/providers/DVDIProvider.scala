@@ -5,6 +5,7 @@ import com.wix.accord._
 import com.wix.accord.dsl._
 import mesosphere.marathon.core.externalvolume.impl.providers.OptionSupport._
 import mesosphere.marathon.core.externalvolume.impl.{ ExternalVolumeProvider, ExternalVolumeValidations }
+import mesosphere.marathon.raml.{ AppVolume, EngineType, ReadMode }
 import mesosphere.marathon.state._
 import mesosphere.marathon.stream._
 import org.apache.mesos.Protos.Volume.Mode
@@ -214,22 +215,43 @@ private[impl] object DVDIProviderValidations extends ExternalVolumeValidations {
       v.external.name is notEmpty
       v.external.provider is equalTo(name)
 
-      v.external.options.get(driverOption) as s"external/options($quotedDriverOption)" is definedAnd(validLabel)
+      v.external.options.get(driverOption) as s"external/options($quotedDriverOption)" is valid(definedAnd(validLabel))
       v.external.options as "external/options" is
         valid(conditional[Map[String, String]](_.get(driverOption).contains("rexray"))(validRexRayOptions))
     }
   }
 
-  override lazy val ramlVolume = {
+  override def ramlVolume(container: raml.Container) = {
     import VolumeOptions._
-    validator[raml.ExternalVolume] { v =>
-      v.name is definedAnd(notEmpty)
-      v.provider is definedAnd(equalTo(name))
+    import PathPatterns._
 
-      v.options.get(driverOption) as s"external/options($quotedDriverOption)" is definedAnd(validLabel)
-      v.options as "external/options" is
-        valid(conditional[Map[String, String]](_.get(driverOption).contains("rexray"))(validRexRayOptions))
+    val validMesosVolume = validator[AppVolume] {
+      volume =>
+        volume.mode is valid(definedAnd(equalTo(ReadMode.Rw)))
+        volume.containerPath is valid(definedAnd(notOneOf(DotPaths: _*) and matchRegexFully(NoSlashesPattern)))
     }
+    val dockerVolumeInfo = validator[raml.ExternalVolume] { v =>
+      v.options is isTrue(s"must only contain $driverOption")(_.filterKeys(_ != driverOption).isEmpty)
+      v.size is isTrue("must be undefined for Docker containers")(_.isEmpty)
+    }
+    val validDockerVolume = validator[AppVolume] { volume =>
+      volume.containerPath is valid(definedAnd(notOneOf(DotPaths: _*) and
+        // TODO(jdef) change this once docker containerizer supports relative containerPaths
+        matchRegexWithFailureMessage(AbsolutePathPattern, "value must be an absolute path")))
+      volume.external is valid(definedAnd(valid(dockerVolumeInfo)))
+    }
+    val volumeInfo = validator[raml.ExternalVolume] { v =>
+      v.name is valid(definedAnd(notEmpty))
+      v.provider is valid(definedAnd(equalTo(name)))
+
+      v.options.get(driverOption) as s"options($quotedDriverOption)" is valid(definedAnd(validLabel))
+      v.options is valid(conditional[Map[String, String]](_.get(driverOption).contains("rexray"))(validRexRayOptions))
+    }
+    validator[AppVolume] { v =>
+      v.external is valid(definedAnd(valid(volumeInfo)))
+    } and implied(
+      container.`type` == EngineType.Mesos)(validMesosVolume) and implied(
+        container.`type` == EngineType.Docker)(validDockerVolume)
   }
 
   /**

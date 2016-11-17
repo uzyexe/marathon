@@ -7,7 +7,7 @@ import mesosphere.marathon.api.v2.Validation._
 import mesosphere.marathon.api.v2.validation.AppValidation
 import mesosphere.marathon.state.PathId
 
-object GroupUpdate {
+object GroupUpdateHelper {
 
   def empty(id: PathId): raml.GroupUpdate = raml.GroupUpdate(Some(id.toString))
 

@@ -1,13 +1,11 @@
-package mesosphere.marathon.integration
+package mesosphere.marathon
+package integration
 
 import java.io.File
 
-import mesosphere.marathon.api.v2.json.AppUpdate
-import mesosphere.marathon.core.health.{ HealthCheck, MarathonHttpHealthCheck, PortReference }
-import mesosphere.marathon.core.readiness.ReadinessCheck
 import mesosphere.marathon.integration.setup._
-import mesosphere.marathon.raml.Resources
-import mesosphere.marathon.state._
+import mesosphere.marathon.raml.{ App, AppHealthCheck, AppHealthCheckProtocol, AppUpdate, EnvVarValue, PortDefinition, ReadinessCheck, UpgradeStrategy }
+import mesosphere.marathon.state.PathId
 import org.apache.commons.io.FileUtils
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers }
 
@@ -42,7 +40,7 @@ class ReadinessCheckIntegrationTest extends IntegrationFunSuite with SingleMarat
 
     When("The service is upgraded")
     val oldTask = marathon.tasks(serviceDef.id).value.head
-    marathon.updateApp(serviceDef.id, AppUpdate(env = Some(EnvVarValue(sys.env))))
+    marathon.updateApp(serviceDef.id, AppUpdate(env = Some(sys.env.mapValues(v => EnvVarValue(v)))), force = false)
     val newTask = WaitTestSupport.waitFor("Wait for new task", 30.seconds) {
       marathon.tasks(serviceDef.id).value.find(_.id != oldTask.id)
     }
@@ -58,7 +56,7 @@ class ReadinessCheckIntegrationTest extends IntegrationFunSuite with SingleMarat
     waitForEvent("deployment_success")
   }
 
-  def deploy(service: AppDefinition, continue: Boolean): Unit = {
+  def deploy(service: App, continue: Boolean): Unit = {
     Given("An application service")
     val result = marathon.createAppV2(service)
     result.code should be (201)
@@ -76,29 +74,32 @@ class ReadinessCheckIntegrationTest extends IntegrationFunSuite with SingleMarat
     waitForEvent("deployment_success")
   }
 
-  def serviceProxy(appId: PathId, plan: String, withHealth: Boolean): AppDefinition = {
-    AppDefinition(
-      id = appId,
+  def serviceProxy(appId: PathId, plan: String, withHealth: Boolean): App = {
+    App(
+      id = appId.toString,
       cmd = Some(s"""$serviceMockScript '$plan'"""),
-      executor = "//cmd",
-      resources = Resources(cpus = 0.5, mem = 128.0),
-      upgradeStrategy = UpgradeStrategy(0, 0),
-      portDefinitions = Seq(PortDefinition(0, name = Some("http"))),
+      executor = Some("//cmd"),
+      cpus = Some(0.5),
+      mem = Some(128.0),
+      upgradeStrategy = Some(UpgradeStrategy(Some(0), Some(0))),
+      portDefinitions = Seq(PortDefinition(Some(0), name = Some("http"))),
       healthChecks =
         if (withHealth)
-          Set(MarathonHttpHealthCheck(
+          Seq(AppHealthCheck(
+          protocol = Some(AppHealthCheckProtocol.Http),
           path = Some("/ping"),
-          portIndex = Some(PortReference(0)),
-          interval = 2.seconds,
-          timeout = 1.second))
-        else Set.empty[HealthCheck],
+          portIndex = Some(0),
+          intervalSeconds = Some(2),
+          timeoutSeconds = Some(1)
+        ))
+        else Nil,
       readinessChecks = Seq(ReadinessCheck(
-        "ready",
-        portName = "http",
-        path = "/v1/plan",
-        interval = 2.seconds,
-        timeout = 1.second,
-        preserveLastResponse = true))
+        name = Some("ready"),
+        portName = Some("http"),
+        path = Some("/v1/plan"),
+        intervalSeconds = 2,
+        timeoutSeconds = 1,
+        preserveLastResponse = Some(true)))
     )
   }
 

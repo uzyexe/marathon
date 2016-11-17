@@ -26,6 +26,9 @@ object Validation {
     }
   }
 
+  /**
+    * when used in a `validator` should be wrapped with `valid(...)`
+    */
   def definedAnd[T](implicit validator: Validator[T]): Validator[Option[T]] = {
     new Validator[Option[T]] {
       override def apply(option: Option[T]): Result = option.map(validator).getOrElse(
@@ -46,12 +49,19 @@ object Validation {
     new Validator[Iterable[T]] {
       override def apply(seq: Iterable[T]): Result = {
 
-        val violations = seq.map(item => (item, validator(item))).zipWithIndex.collect {
-          case ((item, f: Failure), pos: Int) => GroupViolation(item, "not valid", Some(s"($pos)"), f.violations)
+        val violations: Set[Violation] = seq match {
+          case m: Map[_, _] =>
+            m.map(item => (item, validator(item))).collect {
+              case ((k, v), f: Failure) => GroupViolation(k, "not valid", Some(s"($k)"), f.violations)
+            }(collection.breakOut)
+          case _ =>
+            seq.map(item => (item, validator(item))).zipWithIndex.collect {
+              case ((item, f: Failure), pos: Int) => GroupViolation(item, "not valid", Some(s"($pos)"), f.violations)
+            }(collection.breakOut)
         }
 
         if (violations.isEmpty) Success
-        else Failure(Set(GroupViolation(seq, "Seq contains elements, which are not valid.", None, violations.toSet)))
+        else Failure(Set(GroupViolation(seq, "contains elements, which are not valid.", None, violations)))
       }
     }
   }

@@ -49,7 +49,7 @@ class AppDefinitionMesosHealthCheckValidationTest extends MarathonSpec with Matc
   }
 
   class Fixture {
-    def app(healthChecks: Set[_ <: HealthCheck] = Set(MarathonHttpHealthCheck())): AppDefinition =
+    def app(healthChecks: Set[HealthCheck] = Set(MarathonHttpHealthCheck())): AppDefinition =
       AppDefinition(
         id = PathId("/test"),
         cmd = Some("sleep 1000"),

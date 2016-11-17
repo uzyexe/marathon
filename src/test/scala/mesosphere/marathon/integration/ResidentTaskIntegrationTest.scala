@@ -2,15 +2,12 @@ package mesosphere.marathon
 package integration
 
 import mesosphere.Unstable
-import mesosphere.marathon.Protos
-import mesosphere.marathon.api.v2.json.AppUpdate
 import mesosphere.marathon.integration.facades.ITEnrichedTask
 import mesosphere.marathon.integration.facades.MarathonFacade._
 import mesosphere.marathon.integration.facades.MesosFacade.{ ITMesosState, ITResources }
 import mesosphere.marathon.integration.setup.{ IntegrationFunSuite, IntegrationTag, RestResult, SingleMarathonIntegrationTest }
-import mesosphere.marathon.raml.Resources
-import mesosphere.marathon.state._
-import org.apache.mesos.{ Protos => Mesos }
+import mesosphere.marathon.raml.{ App, AppResidency, AppUpdate, AppVolume, Container, EngineType, PersistentVolume, PortDefinition, PortDefinitions, ReadMode, TaskLostBehavior, UpgradeStrategy }
+import mesosphere.marathon.state.PathId
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers, Tag }
 import org.slf4j.LoggerFactory
 
@@ -53,16 +50,11 @@ class ResidentTaskIntegrationTest
     // would prevent launching a task because there `is` already a task (although not launched)
     Given("A resident app that uses a hostname:UNIQUE constraints")
     val containerPath = "persistent-volume"
-    val unique = Protos.Constraint.newBuilder
-      .setField("hostname")
-      .setOperator(Protos.Constraint.Operator.UNIQUE)
-      .setValue("")
-      .build
-
+    val unique = Seq("hostname", "UNIQUE")
     val app = f.residentApp(
       containerPath = containerPath,
       cmd = """sleep 1""",
-      constraints = Set(unique))
+      constraints = Seq(unique))
 
     When("A task is launched")
     f.createAsynchronously(app)
@@ -87,7 +79,7 @@ class ResidentTaskIntegrationTest
     waitForEvent(Event.DEPLOYMENT_SUCCESS)
 
     When("the app is suspended")
-    f.suspendSuccessfully(app.id)
+    f.suspendSuccessfully(PathId(app.id))
 
     And("we wait for a while")
     // FIXME: we need to retry starting tasks since there is a race-condition in Mesos,
@@ -97,7 +89,7 @@ class ResidentTaskIntegrationTest
     And("a new task is started that checks for the previously written file")
     // deploy a new version that checks for the data written the above step
     marathon.updateApp(
-      app.id,
+      PathId(app.id),
       AppUpdate(
         instances = Some(1),
         cmd = Some(s"""test -e $containerPath/data && sleep 2""")
@@ -128,7 +120,7 @@ class ResidentTaskIntegrationTest
     }
 
     When("the app is suspended")
-    f.suspendSuccessfully(app.id)
+    f.suspendSuccessfully(PathId(app.id))
 
     Then("there are no used resources anymore but there are the same reserved resources")
     val state2: RestResult[ITMesosState] = mesos.state
@@ -150,10 +142,10 @@ class ResidentTaskIntegrationTest
     val app = f.createSuccessfully(f.residentApp(instances = 0))
 
     When("We scale up to 5 instances")
-    f.scaleToSuccessfully(app.id, 5)
+    f.scaleToSuccessfully(PathId(app.id), 5)
 
     Then("exactly 5 tasks have been created")
-    f.launchedTasks(app.id).size shouldBe 5
+    f.launchedTasks(PathId(app.id)).size shouldBe 5
   }
 
   test("Scale Down") { f =>
@@ -161,10 +153,10 @@ class ResidentTaskIntegrationTest
     val app = f.createSuccessfully(f.residentApp(instances = 5))
 
     When("we scale down to 0 instances")
-    f.suspendSuccessfully(app.id)
+    f.suspendSuccessfully(PathId(app.id))
 
     Then("all tasks are suspended")
-    val all = f.allTasks(app.id)
+    val all = f.allTasks(PathId(app.id))
     all.size shouldBe 5
     all.count(_.launched) shouldBe 0
     all.count(_.suspended) shouldBe 5
@@ -183,7 +175,7 @@ class ResidentTaskIntegrationTest
 
     When("we restart the app")
     val newVersion = f.restartSuccessfully(app)
-    val all = f.allTasks(app.id)
+    val all = f.allTasks(PathId(app.id))
 
     log.info("tasks after relaunch: {}", all.mkString(";"))
 
@@ -209,16 +201,16 @@ class ResidentTaskIntegrationTest
     )
 
     When("we change the config")
-    val newVersion = f.updateSuccessfully(app.id, AppUpdate(cmd = Some("sleep 1234"))).toString
-    val all = f.allTasks(app.id)
+    val newVersion = f.updateSuccessfully(PathId(app.id), AppUpdate(cmd = Some("sleep 1234"))).toString
+    val all = f.allTasks(PathId(app.id))
 
     log.info("tasks after config change: {}", all.mkString(";"))
 
     Then("no extra task was created")
-    all should have size (5)
+    all should have size 5
 
     And("exactly 5 instances are running")
-    all.filter(_.launched) should have size (5)
+    all.filter(_.launched) should have size 5
 
     And("all 5 tasks are of the new version")
     all.map(_.version).forall(_.contains(newVersion)) shouldBe true
@@ -265,7 +257,7 @@ class ResidentTaskIntegrationTest
     val mem: Double = 1.0
     val disk: Double = 1.0
     val gpus: Double = 0.0
-    val persistentVolumeSize: Long = 2
+    val persistentVolumeSize: Int = 2
 
     val itMesosResources = ITResources(
       "mem" -> mem,
@@ -280,46 +272,45 @@ class ResidentTaskIntegrationTest
       instances: Int = 1,
       backoffDuration: FiniteDuration = 1.hour,
       portDefinitions: Seq[PortDefinition] = PortDefinitions(0),
-      constraints: Set[Protos.Constraint] = Set.empty[Protos.Constraint]): AppDefinition = {
+      constraints: Seq[Seq[String]] = Nil): App = {
 
       val appId: PathId = PathId(s"/$testBasePath/app-${IdGenerator.generate()}")
 
-      val persistentVolume: Volume = PersistentVolume(
-        containerPath = containerPath,
-        persistent = PersistentVolumeInfo(size = persistentVolumeSize),
-        mode = Mesos.Volume.Mode.RW
+      val persistentVolume: AppVolume = AppVolume(
+        containerPath = Some(containerPath),
+        persistent = Some(PersistentVolume(size = persistentVolumeSize)),
+        mode = Some(ReadMode.Rw)
       )
 
-      val app = AppDefinition(
-        appId,
-        instances = instances,
-        residency = Some(Residency(
-          Residency.defaultRelaunchEscalationTimeoutSeconds,
-          Residency.defaultTaskLostBehaviour
-        )),
+      val app = App(
+        appId.toString,
+        instances = Some(instances),
+        residency = Some(AppResidency(3600, Some(TaskLostBehavior.WaitForever))),
         constraints = constraints,
-        container = Some(Container.Mesos(
+        container = Some(Container(
+          `type` = EngineType.Mesos,
           volumes = Seq(persistentVolume)
         )),
         cmd = Some(cmd),
-        executor = "",
         // cpus, mem and disk are really small because otherwise we'll soon run out of reservable resources
-        resources = Resources(cpus = cpus, mem = mem, disk = disk),
+        cpus = Some(cpus),
+        mem = Some(mem),
+        disk = Some(disk),
         portDefinitions = portDefinitions,
-        backoffStrategy = BackoffStrategy(backoff = backoffDuration),
-        upgradeStrategy = UpgradeStrategy(0.5, 0.0)
+        backoffSeconds = Some(backoffDuration.toSeconds.toInt),
+        upgradeStrategy = Some(UpgradeStrategy(Some(0.5), Some(0.0)))
       )
 
       app
     }
 
-    def createSuccessfully(app: AppDefinition): AppDefinition = {
+    def createSuccessfully(app: App): App = {
       createAsynchronously(app)
       waitForEvent(Event.DEPLOYMENT_SUCCESS)
       app
     }
 
-    def createAsynchronously(app: AppDefinition): AppDefinition = {
+    def createAsynchronously(app: App): App = {
       val result = marathon.createAppV2(app)
       result.code should be(201) //Created
       extractDeploymentIds(result) should have size 1
@@ -342,8 +333,8 @@ class ResidentTaskIntegrationTest
       result.value.version.toString
     }
 
-    def restartSuccessfully(app: AppDefinition): VersionString = {
-      val result = marathon.restartApp(app.id)
+    def restartSuccessfully(app: App): VersionString = {
+      val result = marathon.restartApp(PathId(app.id))
       result.code shouldBe 200
       waitForEvent(Event.DEPLOYMENT_SUCCESS)
       result.value.version.toString

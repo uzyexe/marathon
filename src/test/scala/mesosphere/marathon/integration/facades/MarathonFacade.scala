@@ -2,14 +2,14 @@ package mesosphere.marathon
 package integration.facades
 
 import java.io.File
+import java.time.OffsetDateTime
 import java.util.Date
 
 import akka.actor.ActorSystem
-import mesosphere.marathon.api.v2.json.{ AppUpdate, GroupUpdate }
 import mesosphere.marathon.core.event.{ EventSubscribers, Subscribe, Unsubscribe }
 import mesosphere.marathon.core.pod.PodDefinition
 import mesosphere.marathon.integration.setup.{ RestResult, SprayHttpResponse }
-import mesosphere.marathon.raml.{ Pod, PodConversion, PodStatus, Raml }
+import mesosphere.marathon.raml.{ App, AppUpdate, GroupUpdate, Pod, PodConversion, PodStatus, Raml }
 import mesosphere.marathon.state._
 import mesosphere.marathon.util.Retry
 import org.slf4j.LoggerFactory
@@ -29,8 +29,8 @@ import mesosphere.marathon.stream._
   * GET /apps will deliver something like Apps instead of List[App]
   * Needed for dumb jackson.
   */
-case class ITAppDefinition(app: AppDefinition)
-case class ITListAppsResult(apps: Seq[AppDefinition])
+case class ITAppDefinition(app: App)
+case class ITListAppsResult(apps: Seq[App])
 case class ITAppVersions(versions: Seq[Timestamp])
 case class ITListTasks(tasks: Seq[ITEnrichedTask])
 case class ITDeploymentPlan(version: String, deploymentId: String)
@@ -41,7 +41,6 @@ case class ITEnrichedTask(
     id: String,
     host: String,
     ports: Option[Seq[Int]],
-    ipAddresses: Option[Seq[IpAddress]],
     startedAt: Option[Date],
     stagedAt: Option[Date],
     state: String,
@@ -55,7 +54,7 @@ case class ITLeaderResult(leader: String)
 case class ITListDeployments(deployments: Seq[ITDeployment])
 
 case class ITQueueDelay(timeLeftSeconds: Int, overdue: Boolean)
-case class ITQueueItem(app: AppDefinition, count: Int, delay: ITQueueDelay)
+case class ITQueueItem(app: App, count: Int, delay: ITQueueDelay)
 case class ITLaunchQueue(queue: List[ITQueueItem])
 
 case class ITDeployment(id: String, affectedApps: Seq[String])
@@ -100,12 +99,11 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
     (__ \ "id").format[String] ~
     (__ \ "host").format[String] ~
     (__ \ "ports").formatNullable[Seq[Int]] ~
-    (__ \ "ipAddresses").formatNullable[Seq[IpAddress]] ~
     (__ \ "startedAt").formatNullable[Date] ~
     (__ \ "stagedAt").formatNullable[Date] ~
     (__ \ "state").format[String] ~
     (__ \ "version").formatNullable[String]
-  )(ITEnrichedTask(_, _, _, _, _, _, _, _, _), unlift(ITEnrichedTask.unapply))
+  )(ITEnrichedTask(_, _, _, _, _, _, _, _), unlift(ITEnrichedTask.unapply))
 
   def isInBaseGroup(pathId: PathId): Boolean = {
     pathId.path.startsWith(baseGroup.path)
@@ -121,11 +119,14 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 
   //app resource ----------------------------------------------
 
-  def listAppsInBaseGroup: RestResult[List[AppDefinition]] = {
+  def listAppsInBaseGroup: RestResult[List[App]] = {
     val pipeline = marathonSendReceive ~> read[ITListAppsResult]
     val res = result(pipeline(Get(s"$url/v2/apps")), waitTime)
-    res.map(_.apps.filterAs(app => isInBaseGroup(app.id))(collection.breakOut))
+    res.map(_.apps.filterAs(app => isInBaseGroup(PathId(app.id)))(collection.breakOut))
   }
+
+  def app(id: String): RestResult[ITAppDefinition] =
+    app(PathId(id))
 
   def app(id: PathId): RestResult[ITAppDefinition] = {
     requireInBaseGroup(id)
@@ -135,17 +136,23 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
     result(pipeline(Get(getUrl)), waitTime)
   }
 
-  def createAppV2(app: AppDefinition): RestResult[AppDefinition] = {
-    requireInBaseGroup(app.id)
-    val pipeline = marathonSendReceive ~> read[AppDefinition]
+  def createAppV2(app: App): RestResult[App] = {
+    requireInBaseGroup(PathId(app.id))
+    val pipeline = marathonSendReceive ~> read[App]
     result(pipeline(Post(s"$url/v2/apps", app)), waitTime)
   }
+
+  def deleteApp(id: String, force: Boolean): RestResult[ITDeploymentResult] =
+    deleteApp(PathId(id), force)
 
   def deleteApp(id: PathId, force: Boolean = false): RestResult[ITDeploymentResult] = {
     requireInBaseGroup(id)
     val pipeline = marathonSendReceive ~> read[ITDeploymentResult]
     result(pipeline(Delete(s"$url/v2/apps$id?force=$force")), waitTime)
   }
+
+  def updateApp(id: String, app: AppUpdate, force: Boolean): RestResult[ITDeploymentResult] =
+    updateApp(PathId(id), app, force)
 
   def updateApp(id: PathId, app: AppUpdate, force: Boolean = false): RestResult[ITDeploymentResult] = {
     requireInBaseGroup(id)
@@ -156,11 +163,17 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
     result(pipeline(Put(putUrl, app)), waitTime)
   }
 
+  def restartApp(id: String, force: Boolean): RestResult[ITDeploymentResult] =
+    restartApp(PathId(id), force)
+
   def restartApp(id: PathId, force: Boolean = false): RestResult[ITDeploymentResult] = {
     requireInBaseGroup(id)
     val pipeline = marathonSendReceive ~> read[ITDeploymentResult]
     result(pipeline(Post(s"$url/v2/apps$id/restart?force=$force")), waitTime)
   }
+
+  def listAppVersions(id: String): RestResult[ITAppVersions] =
+    listAppVersions(PathId(id))
 
   def listAppVersions(id: PathId): RestResult[ITAppVersions] = {
     requireInBaseGroup(id)
@@ -168,9 +181,12 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
     result(pipeline(Get(s"$url/v2/apps$id/versions")), waitTime)
   }
 
-  def appVersion(id: PathId, version: Timestamp): RestResult[AppDefinition] = {
+  def appVersion(id: String, version: OffsetDateTime): RestResult[App] =
+    appVersion(PathId(id), Timestamp(version))
+
+  def appVersion(id: PathId, version: Timestamp): RestResult[App] = {
     requireInBaseGroup(id)
-    val pipeline = marathonSendReceive ~> read[AppDefinition]
+    val pipeline = marathonSendReceive ~> read[App]
     result(pipeline(Get(s"$url/v2/apps$id/versions/$version")), waitTime)
   }
 
@@ -204,6 +220,9 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 
   //apps tasks resource --------------------------------------
 
+  def tasks(appId: String): RestResult[List[ITEnrichedTask]] =
+    tasks(PathId(appId))
+
   def tasks(appId: PathId): RestResult[List[ITEnrichedTask]] = {
     requireInBaseGroup(appId)
     val pipeline = marathonSendReceive ~> read[ITListTasks]
@@ -211,17 +230,26 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
     res.map(_.tasks.toList)
   }
 
+  def killAllTasks(appId: String, scale: Boolean): RestResult[ITListTasks] =
+    killAllTasks(PathId(appId), scale)
+
   def killAllTasks(appId: PathId, scale: Boolean = false): RestResult[ITListTasks] = {
     requireInBaseGroup(appId)
     val pipeline = marathonSendReceive ~> read[ITListTasks]
     result(pipeline(Delete(s"$url/v2/apps$appId/tasks?scale=$scale")), waitTime)
   }
 
+  def killAllTasksAndScale(appId: String): RestResult[ITDeploymentPlan] =
+    killAllTasksAndScale(PathId(appId))
+
   def killAllTasksAndScale(appId: PathId): RestResult[ITDeploymentPlan] = {
     requireInBaseGroup(appId)
     val pipeline = marathonSendReceive ~> read[ITDeploymentPlan]
     result(pipeline(Delete(s"$url/v2/apps$appId/tasks?scale=true")), waitTime)
   }
+
+  def killTask(appId: String, taskId: String, scale: Boolean): RestResult[HttpResponse] =
+    killTask(PathId(appId), taskId, scale)
 
   def killTask(appId: PathId, taskId: String, scale: Boolean = false): RestResult[HttpResponse] = {
     requireInBaseGroup(appId)
@@ -250,7 +278,7 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
   }
 
   def createGroup(group: GroupUpdate): RestResult[ITDeploymentResult] = {
-    requireInBaseGroup(group.groupId)
+    requireInBaseGroup(group.id.map(PathId(_)).getOrElse(throw new IllegalArgumentException("missing group.id")))
     val pipeline = marathonSendReceive ~> read[ITDeploymentResult]
     result(pipeline(Post(s"$url/v2/groups", group)), waitTime)
   }
@@ -274,7 +302,7 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 
   def rollbackGroup(groupId: PathId, version: Timestamp, force: Boolean = false): RestResult[ITDeploymentResult] = {
     requireInBaseGroup(groupId)
-    updateGroup(groupId, GroupUpdate(None, version = Some(version)), force)
+    updateGroup(groupId, GroupUpdate(None, version = Some(version.toOffsetDateTime)), force)
   }
 
   //deployment resource ------
@@ -366,7 +394,7 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 }
 
 object MarathonFacade {
-  def extractDeploymentIds(app: RestResult[AppDefinition]): Seq[String] = {
+  def extractDeploymentIds(app: RestResult[App]): Seq[String] = {
     try {
       for (deployment <- (app.entityJson \ "deployments").as[JsArray].value)
         yield (deployment \ "id").as[String]

@@ -7,40 +7,52 @@ import mesosphere.marathon.api.v2.Validation._
 
 import scala.collection.immutable.Seq
 
-sealed trait Container {
+sealed trait Container extends Product with Serializable {
+
+  import Container.{ Docker, PortMapping }
+
+  def portMappings: Seq[PortMapping]
   val volumes: Seq[Volume]
 
   // TODO(nfnt): Remove this field and use type matching instead.
-  def docker(): Option[Container.Docker] = {
+  def docker(): Option[Docker] = {
     this match {
-      case docker: Container.Docker => Some(docker)
+      case docker: Docker => Some(docker)
       case _ => None
     }
   }
-
-  def portMappings: Seq[Container.PortMapping] = Nil
 
   def hostPorts: Seq[Option[Int]] =
     portMappings.map(_.hostPort)
 
   def servicePorts: Seq[Int] =
     portMappings.map(_.servicePort)
+
+  def copyWith(portMappings: Seq[PortMapping] = portMappings, volumes: Seq[Volume] = volumes): Container
 }
 
 object Container {
 
   case class Mesos(
-    volumes: Seq[Volume] = Seq.empty,
-    override val portMappings: Seq[PortMapping] = Nil
-  ) extends Container
+      volumes: Seq[Volume] = Seq.empty,
+      override val portMappings: Seq[PortMapping] = Nil
+  ) extends Container {
+
+    override def copyWith(portMappings: Seq[PortMapping] = portMappings, volumes: Seq[Volume] = volumes) =
+      copy(portMappings = portMappings, volumes = volumes)
+  }
 
   case class Docker(
-    volumes: Seq[Volume] = Seq.empty,
-    image: String = "",
-    override val portMappings: Seq[PortMapping] = Nil,
-    privileged: Boolean = false,
-    parameters: Seq[Parameter] = Nil,
-    forcePullImage: Boolean = false) extends Container
+      volumes: Seq[Volume] = Seq.empty,
+      image: String = "",
+      override val portMappings: Seq[PortMapping] = Nil,
+      privileged: Boolean = false,
+      parameters: Seq[Parameter] = Nil,
+      forcePullImage: Boolean = false) extends Container {
+
+    override def copyWith(portMappings: Seq[PortMapping] = portMappings, volumes: Seq[Volume] = volumes) =
+      copy(portMappings = portMappings, volumes = volumes)
+  }
 
   object Docker {
     val validDockerContainer = validator[Docker] { docker =>
@@ -98,11 +110,15 @@ object Container {
     secret: Option[String] = None)
 
   case class MesosDocker(
-    volumes: Seq[Volume] = Seq.empty,
-    image: String = "",
-    override val portMappings: Seq[PortMapping] = Nil,
-    credential: Option[Credential] = None,
-    forcePullImage: Boolean = false) extends Container
+      volumes: Seq[Volume] = Seq.empty,
+      image: String = "",
+      override val portMappings: Seq[PortMapping] = Nil,
+      credential: Option[Credential] = None,
+      forcePullImage: Boolean = false) extends Container {
+
+    override def copyWith(portMappings: Seq[PortMapping] = portMappings, volumes: Seq[Volume] = volumes) =
+      copy(portMappings = portMappings, volumes = volumes)
+  }
 
   object MesosDocker {
     val validMesosDockerContainer = validator[MesosDocker] { docker =>
@@ -111,12 +127,16 @@ object Container {
   }
 
   case class MesosAppC(
-    volumes: Seq[Volume] = Seq.empty,
-    image: String = "",
-    override val portMappings: Seq[PortMapping] = Nil,
-    id: Option[String] = None,
-    labels: Map[String, String] = Map.empty[String, String],
-    forcePullImage: Boolean = false) extends Container
+      volumes: Seq[Volume] = Seq.empty,
+      image: String = "",
+      override val portMappings: Seq[PortMapping] = Nil,
+      id: Option[String] = None,
+      labels: Map[String, String] = Map.empty[String, String],
+      forcePullImage: Boolean = false) extends Container {
+
+    override def copyWith(portMappings: Seq[PortMapping] = portMappings, volumes: Seq[Volume] = volumes) =
+      copy(portMappings = portMappings, volumes = volumes)
+  }
 
   object MesosAppC {
     val prefix = "sha512-"

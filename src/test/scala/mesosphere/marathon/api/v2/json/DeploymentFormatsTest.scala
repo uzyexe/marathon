@@ -2,8 +2,9 @@ package mesosphere.marathon.api.v2.json
 
 import java.util.UUID
 
+import mesosphere.marathon.raml.{ App, GroupUpdate }
 import mesosphere.marathon.state.PathId._
-import mesosphere.marathon.state.{ AppDefinition, Group, Timestamp }
+import mesosphere.marathon.state.{ AppDefinition, Group, PathId, Timestamp }
 import mesosphere.marathon.test.MarathonSpec
 import mesosphere.marathon.upgrade._
 import play.api.libs.json._
@@ -56,6 +57,7 @@ class DeploymentFormatsTest extends MarathonSpec {
     groupFromNull.version should be('empty)
   }
 
+  /* TODO(jdef) doesn't seem useful since GroupsResource doesn't need it
   test("Can read Group json") {
     val json =
       """
@@ -72,7 +74,7 @@ class DeploymentFormatsTest extends MarathonSpec {
         |  "version": "2015-06-03T13:18:25.640Z"
         |}
       """.stripMargin
-    val group = Json.parse(json).as[Group]
+    val group = Json.parse(json).as[raml.Group]
     group.id should be("a".toPath)
     group.apps should have size 1
     group.apps.head._1 should be("b".toPath)
@@ -90,6 +92,7 @@ class DeploymentFormatsTest extends MarathonSpec {
   test("Can write/read byte arrays") {
     marshalUnmarshal("Hello".getBytes)
   }
+  */
 
   test("DeploymentPlan can be serialized") {
     val plan = DeploymentPlan(
@@ -110,8 +113,10 @@ class DeploymentFormatsTest extends MarathonSpec {
 
   // regression test for #1176
   test("allow / as id") {
+    import PathId._
     val json = """{"id": "/"}"""
-    assert(Json.parse(json).as[Group].id.isRoot)
+    val groupId = Json.parse(json).as[GroupUpdate].id
+    assert(groupId.exists(_.toPath.isRoot))
   }
 
   def marshalUnmarshal[T](original: T)(implicit format: Format[T]): JsValue = {
@@ -145,12 +150,12 @@ class DeploymentFormatsTest extends MarathonSpec {
 
   def genGroupUpdate(children: Set[GroupUpdate] = Set.empty) =
     GroupUpdate(
-      Some(genId),
-      Some(Set(genApp, genApp)),
+      Some(genId.toString),
+      Some(Set(App(id = genId.toString), App(id = genId.toString))),
       Some(children),
-      Some(Set(genId)),
+      Some(Set(genId.toString)),
       Some(23),
-      Some(genTimestamp)
+      Some(genTimestamp.toOffsetDateTime)
     )
 
 }

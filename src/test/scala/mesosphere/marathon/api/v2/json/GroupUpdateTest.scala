@@ -1,32 +1,44 @@
-package mesosphere.marathon.api.v2.json
+package mesosphere.marathon
+package api.v2.json
 
-import mesosphere.marathon.state.{ AppDefinition, Timestamp, PathId, Group }
+import mesosphere.marathon.state.{ AppDefinition, Group, PathId, Timestamp }
 import com.wix.accord.validate
-import org.scalatest.{ GivenWhenThen, Matchers, FunSuite }
+import org.scalatest.{ FunSuite, GivenWhenThen, Matchers }
 import PathId._
+import mesosphere.marathon.api.v2.AppNormalization
+import mesosphere.marathon.raml.{ App, GroupConversion, GroupUpdate, Raml }
 
 class GroupUpdateTest extends FunSuite with Matchers with GivenWhenThen {
+
+  val noEnabledFeatures = Set.empty[String]
+  val groupConversionContext: GroupConversion.Context = new GroupConversion.Context {
+    override def preprocess(app: App): AppDefinition = {
+      // assume canonical form and that the app is valid
+      Raml.fromRaml(AppNormalization.apply(app, AppNormalization.Config(None)))
+    }
+  }
 
   test("A group update can be applied to an empty group") {
     Given("An empty group with updates")
     val group = Group.empty
-    val update = GroupUpdate(PathId.empty, Set.empty[AppDefinition], Set(
-      GroupUpdate("test".toPath, Set.empty[AppDefinition], Set(
-        GroupUpdate.empty("foo".toPath)
-      )),
-      GroupUpdate(
-        "apps".toPath,
-        Set(AppDefinition("app1".toPath, Some("foo"),
-          dependencies = Set("d1".toPath, "../test/foo".toPath, "/test".toPath)))
-      )
-    )
+    val update = GroupUpdate(
+      Some(PathId.empty.toString),
+      Some(Set.empty[App]),
+      Some(Set(
+        GroupUpdate(
+          Some("test"), Some(Set.empty[App]), Some(Set(GroupUpdateHelper.empty("foo".toPath)))),
+        GroupUpdate(
+          Some("apps"), Some(Set(
+            App("app1", cmd = Some("foo"),
+              dependencies = Set("d1", "../test/foo", "/test")))))
+      ))
     )
     val timestamp = Timestamp.now()
 
     When("The update is performed")
-    val result = update(group, timestamp)
+    val result = Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, group, timestamp), groupConversionContext))
 
-    validate(result)(Group.validRootGroup(maxApps = None, Set())).isSuccess should be(true)
+    validate(result)(Group.validRootGroup(maxApps = None, noEnabledFeatures)).isSuccess should be(true)
 
     Then("The update is applied correctly")
     result.id should be(PathId.empty)
@@ -45,30 +57,30 @@ class GroupUpdateTest extends FunSuite with Matchers with GivenWhenThen {
   test("A group update can be applied to existing entries") {
     Given("A group with updates of existing nodes")
     val blaApp = AppDefinition("/test/bla".toPath, Some("foo"))
-    val actual = Group(PathId.empty, groups = Set(
+    val actual: Group = Group(PathId.empty, groups = Set(
       Group("/test".toPath, apps = Map(blaApp.id -> blaApp)),
       Group("/apps".toPath, groups = Set(Group("/apps/foo".toPath)))
     ))
     val update = GroupUpdate(
-      PathId.empty,
-      Set.empty[AppDefinition],
-      Set(
+      Some(PathId.empty.toString),
+      Some(Set.empty[App]),
+      Some(Set(
         GroupUpdate(
-          "test".toPath,
-          Set.empty[AppDefinition],
-          Set(GroupUpdate.empty("foo".toPath))
+          Some("test"),
+          Some(Set.empty[App]),
+          Some(Set(GroupUpdateHelper.empty("foo".toPath)))
         ),
         GroupUpdate(
-          "apps".toPath,
-          Set(AppDefinition("app1".toPath, Some("foo"),
-            dependencies = Set("d1".toPath, "../test/foo".toPath, "/test".toPath)))
+          Some("apps"),
+          Some(Set(App("app1", cmd = Some("foo"),
+            dependencies = Set("d1", "../test/foo", "/test"))))
         )
-      )
+      ))
     )
     val timestamp = Timestamp.now()
 
     When("The update is performed")
-    val result: Group = update(actual, timestamp)
+    val result = Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, actual, timestamp), groupConversionContext))
 
     validate(result)(Group.validRootGroup(maxApps = None, Set())).isSuccess should be(true)
 
@@ -102,22 +114,20 @@ class GroupUpdateTest extends FunSuite with Matchers with GivenWhenThen {
 
     When("A group update is applied")
     val update = GroupUpdate(
-      "/test".toPath,
-      Set.empty[AppDefinition],
-      Set(
-        GroupUpdate("/test/group1".toPath, Set(AppDefinition("/test/group1/app3".toPath, Some("foo")))),
+      Some("/test"),
+      Some(Set.empty[App]),
+      Some(Set(
+        GroupUpdate(Some("/test/group1"), Some(Set(App("/test/group1/app3", cmd = Some("foo"))))),
         GroupUpdate(
-          "/test/group3".toPath,
-          Set.empty[AppDefinition],
-          Set(GroupUpdate("/test/group3/sub1".toPath, Set(AppDefinition(
-            "/test/group3/sub1/app4".toPath,
-            Some("foo")))))
+          Some("/test/group3"),
+          Some(Set.empty[App]),
+          Some(Set(GroupUpdate(Some("/test/group3/sub1"), Some(Set(App("/test/group3/sub1/app4", cmd = Some("foo")))))))
         )
-      )
+      ))
     )
 
     val timestamp = Timestamp.now()
-    val result = update(current, timestamp)
+    val result = Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, current, timestamp), groupConversionContext))
 
     validate(result)(Group.validRootGroup(maxApps = None, Set())).isSuccess should be(true)
 
@@ -134,32 +144,32 @@ class GroupUpdateTest extends FunSuite with Matchers with GivenWhenThen {
   }
 
   test("A group update should not contain a version") {
-    val update = GroupUpdate(None, version = Some(Timestamp.now()))
+    val update = GroupUpdate(None, version = Some(Timestamp.now().toOffsetDateTime))
     intercept[IllegalArgumentException] {
-      update(Group.empty, Timestamp.now())
+      Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, Group.empty, Timestamp.now()), groupConversionContext))
     }
   }
 
   test("A group update should not contain a scaleBy") {
     val update = GroupUpdate(None, scaleBy = Some(3))
     intercept[IllegalArgumentException] {
-      update(Group.empty, Timestamp.now())
+      Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, Group.empty, Timestamp.now()), groupConversionContext))
     }
   }
 
   test("Relative path of a dependency, should be relative to group and not to the app") {
     Given("A group with two apps. Second app is dependend of first.")
-    val update = GroupUpdate(PathId.empty, Set.empty[AppDefinition], Set(
+    val update = GroupUpdate(Some(PathId.empty.toString), Some(Set.empty[App]), Some(Set(
       GroupUpdate(
-        "test-group".toPath,
-        Set(
-          AppDefinition("test-app1".toPath, Some("foo")),
-          AppDefinition("test-app2".toPath, Some("foo"), dependencies = Set("test-app1".toPath)))
+        Some("test-group"),
+        Some(Set(
+          App("test-app1", cmd = Some("foo")),
+          App("test-app2", cmd = Some("foo"), dependencies = Set("test-app1"))))
       )
-    ))
+    )))
 
     When("The update is performed")
-    val result = update(Group.empty, Timestamp.now())
+    val result = Raml.fromRaml((GroupConversion.UpdateGroupStructureOp(update, Group.empty, Timestamp.now()), groupConversionContext))
 
     validate(result)(Group.validRootGroup(maxApps = None, Set())).isSuccess should be(true)
 

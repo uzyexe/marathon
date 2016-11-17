@@ -2,6 +2,7 @@ package mesosphere.marathon
 package state
 
 import mesosphere.marathon.Protos.ServiceDefinition
+import mesosphere.marathon.core.pod.{ BridgeNetwork, ContainerNetwork }
 import mesosphere.marathon.raml.Resources
 import mesosphere.marathon.state.EnvVarValue._
 import mesosphere.marathon.state.PathId._
@@ -68,7 +69,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
     assert(proto2.hasContainer)
     assert(0.7 == proto2.getUpgradeStrategy.getMinimumHealthCapacity)
     assert(0.4 == proto2.getUpgradeStrategy.getMaximumOverCapacity)
-    assert(0 == proto2.getAcceptedResourceRoles().getRoleCount())
+    assert(0 == proto2.getAcceptedResourceRoles.getRoleCount)
   }
 
   test("CMD to proto and back again") {
@@ -106,14 +107,14 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
     read should be(app)
   }
 
-  test("ipAddress to proto and back again") {
+  test("app w/ basic container network to proto and back again") {
     val app = AppDefinition(
       id = "app-with-ip-address".toPath,
       cmd = Some("sleep 30"),
       portDefinitions = Nil,
-      ipAddress = Some(
-        IpAddress(
-          groups = Seq("a", "b", "c"),
+      networks = Seq(
+        ContainerNetwork(
+          name = "whatever",
           labels = Map(
             "foo" -> "bar",
             "baz" -> "buzz"
@@ -135,19 +136,15 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       id = "app-with-ip-address".toPath,
       cmd = Some("sleep 30"),
       portDefinitions = Nil,
-      ipAddress = Some(
-        IpAddress(
-          groups = Seq("a", "b", "c"),
-          labels = Map(
-            "foo" -> "bar",
-            "baz" -> "buzz"
-          ),
-          networkName = Some("blahze")
-        )
-      ),
+      networks = Seq(ContainerNetwork(
+        labels = Map(
+          "foo" -> "bar",
+          "baz" -> "buzz"
+        ),
+        name = "blahze"
+      )),
       container = Some(Container.Docker(
         image = "jdef/foo",
-        network = Some(mesos.ContainerInfo.DockerInfo.Network.USER),
         portMappings = Seq(
           Container.PortMapping(hostPort = None),
           Container.PortMapping(hostPort = Some(123)),
@@ -169,9 +166,9 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       id = "app-with-ip-address".toPath,
       cmd = Some("sleep 30"),
       portDefinitions = Nil,
+      networks = Seq(BridgeNetwork()),
       container = Some(Container.Docker(
         image = "jdef/foo",
-        network = Some(mesos.ContainerInfo.DockerInfo.Network.BRIDGE),
         portMappings = Seq(
           Container.PortMapping(hostPort = Some(0)),
           Container.PortMapping(hostPort = Some(123)),
@@ -193,18 +190,16 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       id = "app-with-ip-address".toPath,
       cmd = Some("sleep 30"),
       portDefinitions = Nil,
-      ipAddress = Some(
-        IpAddress(
-          groups = Seq("a", "b", "c"),
-          labels = Map(
-            "foo" -> "bar",
-            "baz" -> "buzz"
-          ),
-          discoveryInfo = DiscoveryInfo(
-            ports = Vector(DiscoveryInfo.Port(name = "http", number = 80, protocol = "tcp"))
-          )
+      networks = Seq(ContainerNetwork(
+        name = "whatever",
+        labels = Map(
+          "foo" -> "bar",
+          "baz" -> "buzz"
         )
-      )
+      )),
+      container = Some(Container.Mesos(
+        portMappings = Seq(Container.PortMapping(name = Some("http"), containerPort = 80, protocol = "tcp"))
+      ))
     )
 
     val proto = app.toProto
@@ -232,7 +227,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
     assert("play" == app1.id.toString)
     assert(3 == app1.instances)
     assert("//cmd" == app1.executor)
-    assert(Some("bash foo-*/start -Dhttp.port=$PORT") == app1.cmd)
+    assert(app1.cmd.contains("bash foo-*/start -Dhttp.port=$PORT"))
   }
 
   test("Read obsolete ports from proto") {

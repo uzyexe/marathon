@@ -8,8 +8,14 @@ import mesosphere.marathon.raml.{ EnvVarSecretRef, EnvVarValueOrSecret, SecretDe
 trait SecretValidation {
   import Validation._
 
+  def stringify(ref: EnvVarValueOrSecret): String =
+    ref match {
+      case secretRef: EnvVarSecretRef => secretRef.secret
+      case _ => ref.toString // this should never be called; if it is, validation output will not be friendly
+    }
+
   def secretRefValidator(secrets: Map[String, SecretDef]) = validator[(String, EnvVarValueOrSecret)] { entry =>
-    entry._2 as s"${entry._1}" is isTrue("references an undefined secret"){
+    entry._2 as stringify(entry._2) is isTrue("references an undefined secret"){
       case ref: EnvVarSecretRef => secrets.contains(ref.secret)
       case _ => true
     }

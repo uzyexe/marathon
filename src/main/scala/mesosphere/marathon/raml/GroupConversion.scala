@@ -45,7 +45,7 @@ object GroupConversion extends GroupConversion {
           .map(update => toGroup(update, groupId(update).canonicalPath(current.id), timestamp))
         (groupUpdates.toSet ++ groupAdditions).map(group => group.id -> group).toMap
       }
-      val effectiveApps: Map[ AppDefinition.AppKey, AppDefinition ] =
+      val effectiveApps: Map[AppDefinition.AppKey, AppDefinition] =
         update.apps.map(_.map(ctx.preprocess)).getOrElse(current.apps.values).map { currentApp =>
           val app = toApp(current.id, currentApp, timestamp)
           app.id -> app

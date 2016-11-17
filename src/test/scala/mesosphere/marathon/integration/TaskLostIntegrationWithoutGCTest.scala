@@ -1,10 +1,9 @@
-package mesosphere.marathon.integration
+package mesosphere.marathon
+package integration
 
-import mesosphere.marathon.Protos
-import mesosphere.marathon.Protos.Constraint.Operator
-import mesosphere.marathon.api.v2.json.AppUpdate
 import mesosphere.marathon.integration.facades.ITEnrichedTask
 import mesosphere.marathon.integration.setup._
+import mesosphere.marathon.raml.AppUpdate
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers }
 
 class TaskLostIntegrationWithoutGCTest extends IntegrationFunSuite with WithMesosCluster with Matchers with GivenWhenThen with BeforeAndAfter {
@@ -25,9 +24,10 @@ class TaskLostIntegrationWithoutGCTest extends IntegrationFunSuite with WithMeso
     val appId = testBasePath / "app"
     val app = appProxy(appId, "v1", instances = 2, withHealth = false).copy(
       cmd = Some("sleep 1000"),
-      constraints = Set(
+      constraints = Seq(
         // make sure each agent runs one task so that no task is launched after one agent goes down
-        Protos.Constraint.newBuilder().setField("hostname").setOperator(Operator.UNIQUE).build())
+        Seq("hostname", "UNIQUE")
+      )
     )
     marathon.createAppV2(app)
 

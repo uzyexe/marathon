@@ -70,15 +70,11 @@ types:
     enum: [HTTP, HTTPS, TCP, COMMAND, MESOS_HTTP, MESOS_HTTPS, MESOS_TCP]
     description: |
       Protocol of the requests to be performed.
-  CommandCheckItems:
-    type: object
+  CommandCheck:
     properties:
       value:
         type: string
-        description: The health check command to execute
-  CommandCheck:
-    properties:
-      items: CommandCheckItems
+        pattern: /[^ \t\r\n\v\f]/
   AppHealthCheck:
     type: object
     properties:

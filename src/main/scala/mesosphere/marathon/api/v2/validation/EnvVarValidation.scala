@@ -22,19 +22,15 @@ trait EnvVarValidation {
 
   def envValidator(secrets: Map[String, SecretDef], enabledFeatures: Set[String]) = validator[Map[String, EnvVarValueOrSecret]] { env =>
     env.keys is every(validEnvVarName)
-
+  } and isTrue("use of secret-references in the environment requires the secrets feature to be enabled") { (env: Map[String, EnvVarValueOrSecret]) =>
     // if the secrets feature is not enabled then don't allow EnvVarSecretRef's in the environment
-    env is isTrue("use of secret-references in the environment requires the secrets feature to be enabled") { env =>
-      if (!enabledFeatures.contains(Features.SECRETS))
-        env.values.count {
-          case _: EnvVarSecretRef => true
-          case _ => false
-        } == 0
-      else true
-    }
-
-    env is every(secretRefValidator(secrets))
-  }
+    if (!enabledFeatures.contains(Features.SECRETS))
+      env.values.count {
+        case _: EnvVarSecretRef => true
+        case _ => false
+      } == 0
+    else true
+  } and every(secretRefValidator(secrets))
 }
 
 object EnvVarValidation extends EnvVarValidation

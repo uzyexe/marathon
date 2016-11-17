@@ -15,6 +15,7 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
   // FIXME: implement complete conversion for all app fields
   implicit val appWriter: Writes[AppDefinition, App] = Writes { app =>
     App(id = app.id.toString)
+  }
 
   def resources(cpus: Option[Double], mem: Option[Double], disk: Option[Double], gpus: Option[Int]): Resources =
     Resources(
@@ -85,7 +86,7 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
           interval = interval.map(_.seconds).getOrElse(CoreHealthCheck.DefaultInterval),
           timeout = timeout.map(_.seconds).getOrElse(CoreHealthCheck.DefaultTimeout),
           maxConsecutiveFailures = failures.getOrElse(CoreHealthCheck.DefaultMaxConsecutiveFailures),
-          command = Command(command.items.value)
+          command = Command(command.value)
         )
       case AppHealthCheck(None, grace, ignore1xx, interval, failures, path, port, index, Some(proto), timeout) =>
         proto match {
@@ -121,7 +122,7 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
               port = port,
               path = path,
               protocol =
-                if (proto == AppHealthCheckProtocol.MesosHttp) Protos.HealthCheckDefinition.Protocol.HTTP
+                if (proto == AppHealthCheckProtocol.Http) Protos.HealthCheckDefinition.Protocol.HTTP
                 else Protos.HealthCheckDefinition.Protocol.HTTPS
             )
           case AppHealthCheckProtocol.Tcp =>
@@ -393,7 +394,7 @@ object AppConversion extends AppConversion {
 
       import state.UpgradeStrategy.{ empty, forResidentTasks }
 
-      val residencyOrDefault: Option[ Residency ] =
+      val residencyOrDefault: Option[Residency] =
         residency.orElse(if (hasPersistentVolumes) Some(Residency.defaultResidency) else None)
 
       val selectedUpgradeStrategy = upgradeStrategy.getOrElse {

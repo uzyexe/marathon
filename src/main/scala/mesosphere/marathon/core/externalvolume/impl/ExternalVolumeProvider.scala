@@ -12,7 +12,7 @@ private[externalvolume] trait ExternalVolumeValidations {
   def rootGroup: Validator[Group]
   def app: Validator[AppDefinition]
   def volume: Validator[ExternalVolume]
-  def ramlVolume: Validator[raml.ExternalVolume]
+  def ramlVolume(container: raml.Container): Validator[raml.AppVolume]
 }
 
 /**

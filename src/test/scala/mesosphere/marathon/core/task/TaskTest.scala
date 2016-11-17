@@ -2,8 +2,9 @@ package mesosphere.marathon
 package core.task
 
 import mesosphere.marathon.core.instance.TestTaskBuilder
+import mesosphere.marathon.core.pod.{ ContainerNetwork, HostNetwork }
 import mesosphere.marathon.core.task.Task.LocalVolumeId
-import mesosphere.marathon.state.{ AppDefinition, IpAddress, PathId }
+import mesosphere.marathon.state.{ AppDefinition, PathId }
 import mesosphere.marathon.stream._
 import mesosphere.marathon.test.{ MarathonTestHelper, Mockito }
 import org.apache.mesos.{ Protos => MesosProtos }
@@ -13,11 +14,13 @@ import org.scalatest.{ FunSuite, GivenWhenThen, Matchers }
 class TaskTest extends FunSuite with Mockito with GivenWhenThen with Matchers {
 
   class Fixture {
-    val appWithoutIpAddress = AppDefinition(id = PathId("/foo/bar"), ipAddress = None)
+    val appWithoutIpAddress = AppDefinition(id = PathId("/foo/bar"), networks = Seq(HostNetwork))
+    val appVirtualNetworks = Seq(ContainerNetwork("whatever"))
     val appWithIpAddress = AppDefinition(
       id = PathId("/foo/bar"),
       portDefinitions = Seq.empty,
-      ipAddress = Some(IpAddress()))
+      networks = appVirtualNetworks
+    )
 
     val networkWithoutIp = MesosProtos.NetworkInfo.newBuilder.build()
 
@@ -136,9 +139,9 @@ class TaskTest extends FunSuite with Mockito with GivenWhenThen with Matchers {
     val m = Map(taskId1 -> 1)
 
     m.get(taskId1) should be('defined)
-    m.get(taskId2) should not be ('defined)
+    m.get(taskId2) should not be 'defined
     m(taskId1) should be(1)
-    an[NoSuchElementException] should be thrownBy (m(taskId2))
+    an[NoSuchElementException] should be thrownBy m(taskId2)
   }
 
 }

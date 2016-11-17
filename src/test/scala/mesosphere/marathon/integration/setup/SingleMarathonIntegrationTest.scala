@@ -4,14 +4,12 @@ package integration.setup
 import java.io.File
 import java.util
 
-import mesosphere.marathon.core.health.{ HealthCheck, MarathonHttpHealthCheck, PortReference }
 import mesosphere.marathon.integration.facades.{ ITDeploymentResult, ITEnrichedTask, MarathonFacade, MesosFacade }
-import mesosphere.marathon.raml.{ PodState, PodStatus, Resources }
-import mesosphere.marathon.state.{ AppDefinition, Container, DockerVolume, PathId }
+import mesosphere.marathon.raml.{ App, AppHealthCheck, AppHealthCheckProtocol, AppVolume, DockerContainer, DockerNetwork, EngineType, PodState, PodStatus, ReadMode }
+import mesosphere.marathon.state.PathId
 import mesosphere.marathon.stream._
 import mesosphere.marathon.test.MarathonActorSupport
 import org.apache.commons.io.FileUtils
-import org.apache.mesos.Protos
 import org.apache.zookeeper.ZooDefs.Perms
 import org.apache.zookeeper._
 import org.apache.zookeeper.data.{ ACL, Id }
@@ -175,6 +173,9 @@ trait SingleMarathonIntegrationTest
     zooKeeper.close()
   }
 
+  def waitForTasks(appId: String, num: Int): List[ITEnrichedTask] =
+    waitForTasks(PathId(appId), num)
+
   def waitForTasks(appId: PathId, num: Int, maxWait: FiniteDuration = 30.seconds): List[ITEnrichedTask] = {
     def checkTasks: Option[List[ITEnrichedTask]] = {
       val tasks = Try(marathon.tasks(appId)).map(_.value).getOrElse(Nil).filter(_.launched)
@@ -248,55 +249,67 @@ trait SingleMarathonIntegrationTest
     file.getAbsolutePath
   }
 
-  private def appProxyHealthChecks = Set(
-    MarathonHttpHealthCheck(
-      gracePeriod = 20.second,
-      interval = 1.second,
-      maxConsecutiveFailures = 10,
-      portIndex = Some(PortReference(0))))
+  private def appProxyHealthChecks = Seq(
+    AppHealthCheck(
+      protocol = Some(AppHealthCheckProtocol.Http),
+      gracePeriodSeconds = Some(20),
+      intervalSeconds = Some(1),
+      maxConsecutiveFailures = Some(10),
+      portIndex = Some(0)))
 
   def appProxyCommand(appId: PathId, versionId: String, containerDir: String, port: String) = {
     val appProxy = appProxyMainInvocationExternal(containerDir)
     s"""echo APP PROXY $$MESOS_TASK_ID RUNNING; $appProxy $port $appId $versionId http://$$HOST:${config.httpPort}/health$appId/$versionId"""
   }
 
-  def dockerAppProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): AppDefinition = {
+  def dockerAppProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): App = {
     val projectDir = sys.props.getOrElse("user.dir", ".")
     val homeDir = sys.props.getOrElse("user.home", "~")
     val containerDir = "/opt/marathon"
 
     val cmd = Some(appProxyCommand(appId, versionId, containerDir, "$PORT0"))
-    AppDefinition(
-      id = appId,
+    App(
+      id = appId.toString,
       cmd = cmd,
-      container = Some(Container.Docker(
-        image = "openjdk:8-jre-alpine",
-        network = Some(Protos.ContainerInfo.DockerInfo.Network.HOST),
-        volumes = collection.immutable.Seq(
-          new DockerVolume(hostPath = s"$homeDir/.ivy2", containerPath = s"$containerDir/.ivy2", mode = Protos.Volume.Mode.RO),
-          new DockerVolume(hostPath = s"$homeDir/.sbt", containerPath = s"$containerDir/.sbt", mode = Protos.Volume.Mode.RO),
-          new DockerVolume(hostPath = s"$projectDir/target", containerPath = s"$containerDir/target", mode = Protos.Volume.Mode.RO)
-        )
+      container = Some(raml.Container(
+        `type` = EngineType.Docker,
+        volumes = Seq(
+          AppVolume(hostPath = Some(s"$homeDir/.ivy2"), containerPath = Some(s"$containerDir/.ivy2"), mode = Some(ReadMode.Ro)),
+          AppVolume(hostPath = Some(s"$homeDir/.sbt"), containerPath = Some(s"$containerDir/.sbt"), mode = Some(ReadMode.Ro)),
+          AppVolume(hostPath = Some(s"$projectDir/target"), containerPath = Some(s"$containerDir/target"), mode = Some(ReadMode.Ro))
+        ),
+        docker = Some(DockerContainer(
+          image = "openjdk:8-jre-alpine",
+          network = Some(DockerNetwork.Host)
+        ))
       )),
-      instances = instances,
-      resources = Resources(cpus = 0.5, mem = 128.0),
-      healthChecks = if (withHealth) appProxyHealthChecks else Set.empty[HealthCheck],
-      dependencies = dependencies
+      instances = Some(instances),
+      cpus = Some(0.5),
+      mem = Some(128.0),
+      healthChecks = if (withHealth) appProxyHealthChecks else Seq.empty,
+      dependencies = dependencies.map(_.toString)
     )
   }
 
-  def appProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): AppDefinition = {
+  def appProxy(appId: String, versionId: String, instances: Int, withHealth: Boolean, dependencies: Set[PathId]): App =
+    appProxy(PathId(appId), versionId, instances, withHealth, dependencies)
+
+  def appProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): App = {
     val cmd = Some(s"""echo APP PROXY $$MESOS_TASK_ID RUNNING; $appProxyMainInvocation $$PORT0 $appId $versionId http://localhost:${config.httpPort}/health$appId/$versionId""")
-    AppDefinition(
-      id = appId,
+    App(
+      id = appId.toString,
       cmd = cmd,
-      executor = "//cmd",
-      instances = instances,
-      resources = Resources(cpus = 0.5, mem = 128.0),
-      healthChecks = if (withHealth) appProxyHealthChecks else Set.empty[HealthCheck],
-      dependencies = dependencies
+      executor = Some("//cmd"),
+      instances = Some(instances),
+      cpus = Some(0.5),
+      mem = Some(128.0),
+      healthChecks = if (withHealth) appProxyHealthChecks else Seq.empty,
+      dependencies = dependencies.map(_.toString)
     )
   }
+
+  def appProxyCheck(appId: String, versionId: String, state: Boolean): IntegrationHealthCheck =
+    appProxyCheck(PathId(appId), versionId, state)
 
   def appProxyCheck(appId: PathId, versionId: String, state: Boolean): IntegrationHealthCheck = {
     //this is used for all instances, as long as there is no specific instance check

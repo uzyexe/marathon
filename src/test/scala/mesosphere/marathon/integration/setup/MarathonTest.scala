@@ -17,15 +17,13 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
 import com.typesafe.scalalogging.StrictLogging
-import mesosphere.marathon.core.health.{ HealthCheck, MarathonHttpHealthCheck, PortReference }
 import mesosphere.marathon.integration.facades.{ ITDeploymentResult, ITEnrichedTask, MarathonFacade, MesosFacade }
-import mesosphere.marathon.raml.{ PodState, PodStatus, Resources }
-import mesosphere.marathon.state.{ AppDefinition, Container, DockerVolume, PathId }
+import mesosphere.marathon.raml.{ App, AppHealthCheck, AppHealthCheckProtocol, AppVolume, Container, DockerContainer, DockerNetwork, EngineType, PodState, PodStatus, ReadMode }
+import mesosphere.marathon.state.PathId
 import mesosphere.marathon.test.ExitDisabledTest
 import mesosphere.marathon.util.{ Lock, Retry }
 import mesosphere.util.PortAllocator
 import org.apache.commons.io.FileUtils
-import org.apache.mesos.Protos
 import org.scalatest.concurrent.PatienceConfiguration.Timeout
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.{ BeforeAndAfterAll, Suite }
@@ -274,12 +272,16 @@ trait MarathonTest extends Suite with StrictLogging with ScalaFutures with Befor
     s"""$javaExecutable -Xmx64m -DappProxyId=$id -DtestSuite=$suiteName -classpath $classPath $main"""
   }
 
-  lazy val appProxyHealthChecks = Set(
-    MarathonHttpHealthCheck(gracePeriod = 3.second, interval = 1.second, maxConsecutiveFailures = 2,
-      portIndex = Some(PortReference.ByIndex(0))))
+  lazy val appProxyHealthChecks = Seq(
+    AppHealthCheck(
+      protocol = Some(AppHealthCheckProtocol.Http),
+      gracePeriodSeconds = Some(3),
+      intervalSeconds = Some(1),
+      maxConsecutiveFailures = Some(2),
+      portIndex = Some(0)))
 
   def appProxy(appId: PathId, versionId: String, instances: Int,
-    withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): AppDefinition = {
+    withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): App = {
 
     val appProxyMainInvocation: String = {
       val file = File.createTempFile("appProxy", ".sh")
@@ -297,14 +299,14 @@ trait MarathonTest extends Suite with StrictLogging with ScalaFutures with Befor
     val cmd = Some(s"""echo APP PROXY $$MESOS_TASK_ID RUNNING; $appProxyMainInvocation """ +
       s"""$$PORT0 $appId $versionId http://127.0.0.1:${callbackEndpoint.localAddress.getPort}/health$appId/$versionId""")
 
-    AppDefinition(
-      id = appId,
+    App(
+      id = appId.toString,
       cmd = cmd,
-      executor = "//cmd",
-      instances = instances,
-      resources = Resources(cpus = 0.5, mem = 128.0),
-      healthChecks = if (withHealth) appProxyHealthChecks else Set.empty[HealthCheck],
-      dependencies = dependencies
+      executor = Some("//cmd"),
+      instances = Some(instances),
+      cpus = Some(0.5), mem = Some(128.0),
+      healthChecks = if (withHealth) appProxyHealthChecks else Seq.empty,
+      dependencies = dependencies.map(_.toString)
     )
   }
 
@@ -327,28 +329,32 @@ trait MarathonTest extends Suite with StrictLogging with ScalaFutures with Befor
     s"""echo APP PROXY $$MESOS_TASK_ID RUNNING; $appProxy $port $appId $versionId $marathonUrl/health$appId/$versionId"""
   }
 
-  def dockerAppProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): AppDefinition = {
+  def dockerAppProxy(appId: PathId, versionId: String, instances: Int, withHealth: Boolean = true, dependencies: Set[PathId] = Set.empty): App = {
     val projectDir = sys.props.getOrElse("user.dir", ".")
     val homeDir = sys.props.getOrElse("user.home", "~")
     val containerDir = "/opt/marathon"
 
     val cmd = Some(appProxyCommand(appId, versionId, containerDir, "$PORT0"))
-    AppDefinition(
-      id = appId,
+    App(
+      id = appId.toString,
       cmd = cmd,
-      container = Some(Container.Docker(
-        image = "openjdk:8-jre-alpine",
-        network = Some(Protos.ContainerInfo.DockerInfo.Network.HOST),
-        volumes = collection.immutable.Seq(
-          new DockerVolume(hostPath = s"$homeDir/.ivy2", containerPath = s"$containerDir/.ivy2", mode = Protos.Volume.Mode.RO),
-          new DockerVolume(hostPath = s"$homeDir/.sbt", containerPath = s"$containerDir/.sbt", mode = Protos.Volume.Mode.RO),
-          new DockerVolume(hostPath = s"$projectDir/target", containerPath = s"$containerDir/target", mode = Protos.Volume.Mode.RO)
-        )
+      container = Some(Container(
+        `type` = EngineType.Docker,
+        docker = Some(DockerContainer(
+          image = "openjdk:8-jre-alpine",
+          network = Some(DockerNetwork.Host)
+        //new DockerVolume(hostPath = , containerPath = , mode = Protos.Volume.Mode.RO)
+        )),
+        volumes = Seq(
+          s"$homeDir/.ivy2" -> s"$containerDir/.ivy2",
+          s"$homeDir/.sbt" -> s"$containerDir/.sbt",
+          s"$projectDir/target" -> s"$containerDir/target"
+        ).map(v => AppVolume(hostPath = Some(v._1), containerPath = Some(v._2), mode = Some(ReadMode.Ro)))
       )),
-      instances = instances,
-      resources = Resources(cpus = 0.5, mem = 128.0),
-      healthChecks = if (withHealth) appProxyHealthChecks else Set.empty[HealthCheck],
-      dependencies = dependencies
+      instances = Some(instances),
+      cpus = Some(0.5), mem = Some(128.0),
+      healthChecks = if (withHealth) appProxyHealthChecks else Nil,
+      dependencies = dependencies.map(_.toString)
     )
   }
 
