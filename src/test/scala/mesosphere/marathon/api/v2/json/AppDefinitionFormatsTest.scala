@@ -5,6 +5,7 @@ import mesosphere.marathon.Protos
 import mesosphere.marathon.Protos.Constraint
 import mesosphere.marathon.core.health.HealthCheck
 import mesosphere.marathon.core.readiness.ReadinessCheckTestHelper
+import mesosphere.marathon.raml.{ App, Raml }
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state.VersionInfo.OnlyVersion
 import mesosphere.marathon.state._
@@ -44,7 +45,7 @@ class AppDefinitionFormatsTest
     import AppDefinition._
     import Fixture._
 
-    val r1 = Json.toJson(a1)
+    val r1 = Json.toJson(Raml.toRaml(a1))
     // check supplied values
     (r1 \ "id").get should equal (JsString("app1"))
     (r1 \ "cmd").get should equal (JsString("sleep 10"))
@@ -96,7 +97,7 @@ class AppDefinitionFormatsTest
     import AppDefinition._
     import Fixture._
 
-    val r1 = j1.as[AppDefinition]
+    val r1: AppDefinition = Raml.fromRaml(j1.as[App])
     // check supplied values
     r1.id should equal (a1.id)
     r1.cmd should equal (a1.cmd)
@@ -138,66 +139,64 @@ class AppDefinitionFormatsTest
         |     "lastScalingAt": "1970-01-01T00:00:00.002Z",
         |     "lastConfigChangeAt": "1970-01-01T00:00:00.001Z"
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App]
 
     app.versionInfo shouldBe a[OnlyVersion]
   }
 
   test("FromJSON should fail for empty id") {
     val json = Json.parse(""" { "id": "" }""")
-    a[JsResultException] shouldBe thrownBy { json.as[AppDefinition] }
+    a[JsResultException] shouldBe thrownBy { json.as[App] }
   }
 
   test("FromJSON should fail when using / as an id") {
     val json = Json.parse(""" { "id": "/" }""")
-    a[JsResultException] shouldBe thrownBy { json.as[AppDefinition] }
+    a[JsResultException] shouldBe thrownBy { json.as[App] }
   }
 
   test("FromJSON should not fail when 'cpus' is greater than 0") {
     val json = Json.parse(""" { "id": "test", "cpus": 0.0001 }""")
-    noException should be thrownBy {
-      json.as[AppDefinition]
-    }
+    noException should be thrownBy { json.as[App] }
   }
 
   test("""ToJSON should correctly handle missing acceptedResourceRoles""") {
     val appDefinition = AppDefinition(id = PathId("test"), acceptedResourceRoles = Set.empty)
-    val json = Json.toJson(appDefinition)
+    val json = Json.toJson(Raml.toRaml(appDefinition))
     (json \ "acceptedResourceRoles").asOpt[Set[String]] should be(None)
   }
 
   test("""ToJSON should correctly handle acceptedResourceRoles""") {
     val appDefinition = AppDefinition(id = PathId("test"), acceptedResourceRoles = Set("a"))
-    val json = Json.toJson(appDefinition)
+    val json = Json.toJson(Raml.toRaml(appDefinition))
     (json \ "acceptedResourceRoles").as[Set[String]] should be(Set("a"))
   }
 
   test("""FromJSON should parse "acceptedResourceRoles": ["production", "*"] """) {
     val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": ["production", "*"] }""")
-    val appDef = json.as[AppDefinition]
+    val appDef: AppDefinition = Raml.fromRaml(json.as[App])
     appDef.acceptedResourceRoles should equal(Set("production", ResourceRole.Unreserved))
   }
 
   test("""FromJSON should parse "acceptedResourceRoles": ["*"] """) {
     val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": ["*"] }""")
-    val appDef = json.as[AppDefinition]
+    val appDef: AppDefinition = Raml.fromRaml(json.as[App])
     appDef.acceptedResourceRoles should equal(Set(ResourceRole.Unreserved))
   }
 
   test("FromJSON should fail when 'acceptedResourceRoles' is defined but empty") {
     val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": [] }""")
-    a[JsResultException] shouldBe thrownBy { json.as[AppDefinition] }
+    a[JsResultException] shouldBe thrownBy { json.as[App] }
   }
 
   test("FromJSON should read the default upgrade strategy") {
     val json = Json.parse(""" { "id": "test" }""")
-    val appDef = json.as[AppDefinition]
+    val appDef: AppDefinition = Raml.fromRaml(json.as[App])
     appDef.upgradeStrategy should be(UpgradeStrategy.empty)
   }
 
   test("FromJSON should read the residency upgrade strategy") {
     val json = Json.parse(""" { "id": "test", "residency": {}}""")
-    val appDef = json.as[AppDefinition]
+    val appDef: AppDefinition = Raml.fromRaml(json.as[App])
     appDef.upgradeStrategy should be(UpgradeStrategy.forResidentTasks)
   }
 
@@ -216,19 +215,19 @@ class AppDefinitionFormatsTest
         |  }
         |}
       """.stripMargin)
-    val appDef = json.as[AppDefinition]
+    val appDef: AppDefinition = Raml.fromRaml(json.as[App])
     appDef.residency should be(Some(Residency.defaultResidency))
   }
 
   test("""FromJSON should parse "residency" """) {
-    val appDef = Json.parse(
+    val appDef = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "residency": {
         |     "relaunchEscalationTimeoutSeconds": 300,
         |     "taskLostBehavior": "RELAUNCH_AFTER_TIMEOUT"
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.residency should equal(Some(Residency(300, Protos.ResidencyDefinition.TaskLostBehavior.RELAUNCH_AFTER_TIMEOUT)))
   }
@@ -246,26 +245,26 @@ class AppDefinitionFormatsTest
       ReadinessCheckTestHelper.alternativeHttps
     ))
     val appJson = Json.toJson(app)
-    val rereadApp = appJson.as[AppDefinition]
+    val rereadApp = Raml.fromRaml(appJson.as[App])
     rereadApp.readinessChecks should have size (1)
     rereadApp should equal(app)
   }
 
   test("FromJSON should parse ipAddress.networkName") {
-    val appDef = Json.parse(
+    val appDef = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
         |    "networkName": "foo"
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
   }
 
   test("FromJSON should parse ipAddress.networkName with MESOS container") {
-    val appDef = Json.parse(
+    val appDef = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
@@ -274,7 +273,7 @@ class AppDefinitionFormatsTest
         |  "container": {
         |    "type": "MESOS"
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
@@ -283,7 +282,7 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse ipAddress.networkName with DOCKER container w/o port mappings") {
-    val appDef = Json.parse(
+    val appDef = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
@@ -296,7 +295,7 @@ class AppDefinitionFormatsTest
         |      "network": "USER"
         |    }
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
@@ -306,7 +305,7 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse ipAddress.networkName with DOCKER container w/ port mappings") {
-    val appDef = Json.parse(
+    val appDef: AppDefinition = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
@@ -322,7 +321,7 @@ class AppDefinitionFormatsTest
         |      }]
         |    }
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
@@ -335,7 +334,7 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse Mesos Docker container") {
-    val appDef = Json.parse(
+    val appDef: AppDefinition = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
@@ -351,7 +350,7 @@ class AppDefinitionFormatsTest
         |      }
         |    }
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
@@ -367,7 +366,7 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse Mesos AppC container") {
-    val appDef = Json.parse(
+    val appDef: AppDefinition = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": {
@@ -385,7 +384,7 @@ class AppDefinitionFormatsTest
         |      }
         |    }
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && appDef.ipAddress.get.networkName.isDefined should equal(true)
     appDef.ipAddress.get.networkName should equal(Some("foo"))
@@ -404,17 +403,17 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse ipAddress without networkName") {
-    val appDef = Json.parse(
+    val appDef: AppDefinition = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "ipAddress": { }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.ipAddress.isDefined && !appDef.ipAddress.get.networkName.isDefined should equal(true)
   }
 
   test("FromJSON should parse secrets") {
-    val appDef = Json.parse(
+    val appDef: AppDefinition = Raml.fromRaml(Json.parse(
       """{
         |  "id": "test",
         |  "secrets": {
@@ -422,7 +421,7 @@ class AppDefinitionFormatsTest
         |     "secret2": { "source": "/foo" },
         |     "secret3": { "source": "/foo2" }
         |  }
-        |}""".stripMargin).as[AppDefinition]
+        |}""".stripMargin).as[App])
 
     appDef.secrets.keys.size should equal(3)
     appDef.secrets("secret1").source should equal("/foo")

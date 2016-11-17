@@ -10,7 +10,7 @@ import mesosphere.marathon.api.v2.ValidationHelper
 import mesosphere.marathon.core.health.{ MarathonHttpHealthCheck, MesosCommandHealthCheck, MesosHttpHealthCheck, PortReference }
 import mesosphere.marathon.core.plugin.PluginManager
 import mesosphere.marathon.core.readiness.ReadinessCheckTestHelper
-import mesosphere.marathon.raml.Resources
+import mesosphere.marathon.raml.{ App, Raml, Resources }
 import mesosphere.marathon.state.Container.Docker
 import mesosphere.marathon.state.Container.PortMapping
 import mesosphere.marathon.state.DiscoveryInfo.Port
@@ -440,16 +440,14 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
   }
 
   test("SerializationRoundtrip empty") {
-    import Formats._
-    val app1 = AppDefinition(id = PathId("/test"))
+    val app1 = Raml.toRaml(AppDefinition(id = PathId("/test")))
     assert(app1.cmd.isEmpty)
     assert(app1.args.isEmpty)
     JsonTestHelper.assertSerializationRoundtripWorks(app1)
   }
 
   private[this] def fromJson(json: String): AppDefinition = {
-    import Formats._
-    Json.fromJson[AppDefinition](Json.parse(json)).getOrElse(throw new RuntimeException(s"could not parse: $json"))
+    Raml.fromRaml(Json.fromJson[App](Json.parse(json)).getOrElse(throw new RuntimeException(s"could not parse: $json")))
   }
 
   test("Reading app definition with command health check") {
@@ -477,7 +475,6 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
   }
 
   test("SerializationRoundtrip with complex example") {
-    import Formats._
 
     val app3 = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -506,11 +503,10 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       dependencies = Set(PathId("/prod/product/backend")),
       upgradeStrategy = UpgradeStrategy(minimumHealthCapacity = 0.75)
     )
-    JsonTestHelper.assertSerializationRoundtripWorks(app3)
+    JsonTestHelper.assertSerializationRoundtripWorks(Raml.toRaml(app3))
   }
 
   test("SerializationRoundtrip preserves portIndex") {
-    import Formats._
 
     val app3 = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -518,11 +514,10 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       portDefinitions = PortDefinitions(9001, 9002),
       healthChecks = Set(MarathonHttpHealthCheck(portIndex = Some(PortReference(1))))
     )
-    JsonTestHelper.assertSerializationRoundtripWorks(app3)
+    JsonTestHelper.assertSerializationRoundtripWorks(Raml.toRaml(app3))
   }
 
   test("Reading AppDefinition adds portIndex to a Marathon HTTP health check if the app has ports") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -531,14 +526,13 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MarathonHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MarathonHttpHealthCheck(portIndex = Some(PortReference(0)))))
   }
 
   test("Reading AppDefinition does not add portIndex to a Marathon HTTP health check if the app doesn't have ports") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -547,14 +541,13 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MarathonHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MarathonHttpHealthCheck(portIndex = None)))
   }
 
   test("Reading AppDefinition adds portIndex to a Marathon HTTP health check if it has at least one portMapping") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -569,8 +562,8 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MarathonHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val parsedApp = Json.fromJson[AppDefinition](json)
+    val json = Json.toJson(Raml.toRaml(app))
+    val parsedApp = Json.fromJson[App](json)
     withClue(s"json ${json}\n but parsed ${parsedApp}") {
       parsedApp.asOpt.nonEmpty should be(true)
       parsedApp.asOpt.foreach { reread =>
@@ -580,7 +573,6 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
   }
 
   test("Reading AppDefinition adds not add portIndex to a Marathon HTTP health check if it has no ports nor portMappings") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -590,14 +582,13 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MarathonHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MarathonHttpHealthCheck(portIndex = None)))
   }
 
   test("Reading AppDefinition does not add portIndex to a Mesos HTTP health check if the app doesn't have ports") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -606,14 +597,13 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MesosHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MesosHttpHealthCheck(portIndex = None)))
   }
 
   test("Reading AppDefinition adds portIndex to a Mesos HTTP health check if it has at least one portMapping") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -628,14 +618,13 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MesosHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MesosHttpHealthCheck(portIndex = Some(PortReference(0)))))
   }
 
   test("Reading AppDefinition does not add portIndex to a Mesos HTTP health check if it has no ports nor portMappings") {
-    import Formats._
 
     val app = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -645,8 +634,8 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       healthChecks = Set(MesosHttpHealthCheck())
     )
 
-    val json = Json.toJson(app)
-    val reread = Json.fromJson[AppDefinition](json).get
+    val json = Json.toJson(Raml.toRaml(app))
+    val reread = Raml.fromRaml(Json.fromJson[App](json).get)
 
     reread.healthChecks.headOption should be(Some(MesosHttpHealthCheck(portIndex = None)))
   }
@@ -893,8 +882,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       }
       """
 
-    import Formats._
-    val result = Json.fromJson[AppDefinition](Json.parse(json))
+    val result = Json.fromJson[App](Json.parse(json))
     assert(result == JsError(ValidationError("You cannot specify both an IP address and ports")))
   }
 
@@ -908,8 +896,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       }
       """
 
-    import Formats._
-    val result = Json.fromJson[AppDefinition](Json.parse(json))
+    val result = Json.fromJson[App](Json.parse(json))
     assert(result == JsError(ValidationError("You cannot specify both uris and fetch fields")))
   }
 
@@ -944,7 +931,6 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
   }
 
   test("SerializationRoundtrip preserves secret references in environment variables") {
-    import Formats._
 
     val app3 = AppDefinition(
       id = PathId("/prod/product/frontend/my-app"),
@@ -954,7 +940,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
         "qaz" -> EnvVarSecretRef("james")
       )
     )
-    JsonTestHelper.assertSerializationRoundtripWorks(app3)
+    JsonTestHelper.assertSerializationRoundtripWorks(Raml.toRaml(app3))
   }
 
   test("environment variables with secrets should parse") {
@@ -970,9 +956,8 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       }
       """
 
-    import Formats._
-    val result = Json.fromJson[AppDefinition](Json.parse(json))
-    assert(result.get.env.equals(Map[String, EnvVarValue](
+    val result = Raml.fromRaml(Json.fromJson[App](Json.parse(json)).get)
+    assert(result.env.equals(Map[String, EnvVarValue](
       "qwe" -> "rty".toEnvVar,
       "ssh" -> EnvVarSecretRef("psst")
     )))

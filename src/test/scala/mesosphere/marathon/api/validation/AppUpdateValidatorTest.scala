@@ -4,14 +4,16 @@ package api.validation
 import com.wix.accord.validate
 import mesosphere.UnitTest
 import mesosphere.marathon.api.v2.json.AppUpdate
-import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.core.plugin.PluginManager
+import mesosphere.marathon.raml.{ App, Raml }
 import mesosphere.marathon.state.Container.PortMapping
 import mesosphere.marathon.state.{ AppDefinition, Container, PathId }
 import org.scalatest.Matchers
 import play.api.libs.json.Json
 
 class AppUpdateValidatorTest extends UnitTest with Matchers {
+  import mesosphere.marathon.api.v2.json.Formats._
+
   implicit val appUpdateValidator = AppUpdate.appUpdateValidator(Set())
   implicit val validAppDefinition = AppDefinition.validAppDefinition(Set.empty)(PluginManager.None)
 
@@ -36,7 +38,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
   "validation for network type changes" should {
     // regression test for DCOS-10641
     "allow updating from HOST to USER network for an app using a Docker container" in {
-      val originalApp = Json.parse(
+      val originalApp = Raml.fromRaml(Json.parse(
         """
           | {
           |  "id": "/sleepy-moby",
@@ -69,7 +71,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
           |  ],
           |  "requirePorts": false
           |}
-        """.stripMargin).as[AppDefinition]
+        """.stripMargin).as[App])
 
       val appUpdate = Json.parse(
         """

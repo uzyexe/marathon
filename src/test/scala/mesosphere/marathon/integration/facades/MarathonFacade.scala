@@ -9,7 +9,7 @@ import mesosphere.marathon.api.v2.json.{ AppUpdate, GroupUpdate }
 import mesosphere.marathon.core.event.{ EventSubscribers, Subscribe, Unsubscribe }
 import mesosphere.marathon.core.pod.PodDefinition
 import mesosphere.marathon.integration.setup.{ RestResult, SprayHttpResponse }
-import mesosphere.marathon.raml.{ Pod, PodConversion, PodStatus, Raml }
+import mesosphere.marathon.raml.{ App, Pod, PodConversion, PodStatus, Raml }
 import mesosphere.marathon.state._
 import mesosphere.marathon.util.Retry
 import org.slf4j.LoggerFactory
@@ -137,8 +137,9 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 
   def createAppV2(app: AppDefinition): RestResult[AppDefinition] = {
     requireInBaseGroup(app.id)
-    val pipeline = marathonSendReceive ~> read[AppDefinition]
-    result(pipeline(Post(s"$url/v2/apps", app)), waitTime)
+    val pipeline = marathonSendReceive ~> read[App]
+    val res = result(pipeline(Post(s"$url/v2/apps", Raml.toRaml(app))), waitTime)
+    res.map(Raml.fromRaml(_))
   }
 
   def deleteApp(id: PathId, force: Boolean = false): RestResult[ITDeploymentResult] = {
@@ -170,8 +171,9 @@ class MarathonFacade(url: String, baseGroup: PathId, waitTime: Duration = 30.sec
 
   def appVersion(id: PathId, version: Timestamp): RestResult[AppDefinition] = {
     requireInBaseGroup(id)
-    val pipeline = marathonSendReceive ~> read[AppDefinition]
-    result(pipeline(Get(s"$url/v2/apps$id/versions/$version")), waitTime)
+    val pipeline = marathonSendReceive ~> read[App]
+    val res = result(pipeline(Get(s"$url/v2/apps$id/versions/$version")), waitTime)
+    res.map(Raml.fromRaml(_))
   }
 
   //pod resource ---------------------------------------------

@@ -3,11 +3,11 @@ package mesosphere.marathon.api.v2
 import mesosphere.marathon.MarathonConf
 import mesosphere.marathon.stream._
 import mesosphere.marathon.api.TestAuthFixture
-import mesosphere.marathon.api.v2.json.Formats._
 import mesosphere.marathon.core.base.{ Clock, ConstantClock }
 import mesosphere.marathon.core.launcher.OfferMatchResult
 import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.core.launchqueue.LaunchQueue.{ QueuedInstanceInfo, QueuedInstanceInfoWithStatistics }
+import mesosphere.marathon.raml.{ App, Raml }
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state.AppDefinition
 import mesosphere.marathon.test.{ MarathonSpec, MarathonTestHelper, Mockito }
@@ -42,7 +42,7 @@ class QueueResourceTest extends MarathonSpec with Matchers with Mockito with Giv
     val queuedApps = (json \ "queue").as[Seq[JsObject]]
     val jsonApp1 = queuedApps.find { apps => (apps \ "app" \ "id").as[String] == "/app" }.get
 
-    (jsonApp1 \ "app").as[AppDefinition] should be(app)
+    Raml.fromRaml((jsonApp1 \ "app").as[App]) should be(app)
     (jsonApp1 \ "count").as[Int] should be(23)
     (jsonApp1 \ "delay" \ "overdue").as[Boolean] should be(false)
     (jsonApp1 \ "delay" \ "timeLeftSeconds").as[Int] should be(100) //the deadline holds the current time...
@@ -78,7 +78,7 @@ class QueueResourceTest extends MarathonSpec with Matchers with Mockito with Giv
     val queuedApps = (json \ "queue").as[Seq[JsObject]]
     val jsonApp1 = queuedApps.find { apps => (apps \ "app" \ "id").get == JsString("/app") }.get
 
-    (jsonApp1 \ "app").as[AppDefinition] should be(app)
+    Raml.fromRaml((jsonApp1 \ "app").as[App]) should be(app)
     (jsonApp1 \ "count").as[Int] should be(23)
     (jsonApp1 \ "delay" \ "overdue").as[Boolean] should be(true)
     (jsonApp1 \ "delay" \ "timeLeftSeconds").as[Int] should be(0)

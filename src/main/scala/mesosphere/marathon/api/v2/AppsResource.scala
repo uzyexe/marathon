@@ -19,6 +19,7 @@ import mesosphere.marathon.core.event.ApiPostEvent
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.plugin.PluginManager
 import mesosphere.marathon.plugin.auth._
+import mesosphere.marathon.raml.{ App, Raml }
 import mesosphere.marathon.state.PathId._
 import mesosphere.marathon.state._
 import mesosphere.marathon.stream._
@@ -67,7 +68,7 @@ class AppsResource @Inject() (
     body: Array[Byte],
     @DefaultValue("false")@QueryParam("force") force: Boolean,
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
-    withValid(Json.parse(body).as[AppDefinition].withCanonizedIds()) { appDef =>
+    withValid(Raml.fromRaml(Json.parse(body).as[App]).withCanonizedIds()) { appDef: AppDefinition =>
       val now = clock.now()
       val app = appDef.copy(
         ipAddress = appDef.ipAddress.map { ipAddress =>

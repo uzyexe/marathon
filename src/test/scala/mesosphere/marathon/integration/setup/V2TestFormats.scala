@@ -1,8 +1,10 @@
-package mesosphere.marathon.integration.setup
+package mesosphere.marathon
+package integration.setup
 
 import mesosphere.marathon.api.v2.json.AppUpdate
 import mesosphere.marathon.core.event._
-import mesosphere.marathon.state.{ Group, Timestamp }
+import mesosphere.marathon.raml.{ App, Raml }
+import mesosphere.marathon.state.{ AppDefinition, Group, Timestamp }
 import mesosphere.marathon.upgrade.DeploymentPlan
 import play.api.libs.json._
 
@@ -20,6 +22,19 @@ object V2TestFormats {
         version = (js \ "version").as[Timestamp]).copy(id = (js \ "id").as[String]
       )
     )
+  }
+
+  implicit val appDefinitionFormat = new Format[AppDefinition] {
+    def reads(json: JsValue): JsResult[AppDefinition] = {
+      json.validate[App].map(Raml.fromRaml(_))
+    }
+    def writes(o: AppDefinition): JsValue = {
+      play.api.libs.json.Json.toJson(Raml.toRaml(o))
+    }
+  }
+  implicit val appDefSeqFormat = new Format[Seq[AppDefinition]] {
+    def reads(json: JsValue) = json.validate[List[AppDefinition]].map(_.to[Seq])
+    def writes(o: Seq[AppDefinition]): JsValue = Json.toJson(o.map(Json.toJson(_)(appDefinitionFormat)).toSeq)
   }
 
   implicit lazy val SubscribeReads: Reads[Subscribe] = Json.reads[Subscribe]

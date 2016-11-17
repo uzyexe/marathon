@@ -4,11 +4,10 @@ package api.validation
 import com.wix.accord.validate
 import mesosphere.marathon.Protos.Constraint
 import mesosphere.marathon.api.v2.Validation._
-import mesosphere.marathon.api.v2.json.Formats
 import mesosphere.marathon.core.health.{ MarathonHttpHealthCheck, MesosCommandHealthCheck }
 import mesosphere.marathon.core.plugin.{ PluginDefinitions, PluginManager }
 import mesosphere.marathon.core.readiness.ReadinessCheck
-import mesosphere.marathon.raml.Resources
+import mesosphere.marathon.raml.{ App, Raml, Resources }
 import mesosphere.marathon.state._
 import mesosphere.marathon.test.{ MarathonSpec, MarathonTestHelper }
 import org.apache.mesos.{ Protos => mesos }
@@ -675,19 +674,17 @@ class RunSpecValidatorTest extends MarathonSpec with Matchers with GivenWhenThen
   }
 
   test("cassandraWithoutResidency") {
-    import Formats._
 
     val f = new Fixture
-    val app = Json.parse(f.cassandraWithoutResidency).as[AppDefinition]
+    val app = Raml.fromRaml(Json.parse(f.cassandraWithoutResidency).as[App])
     val result = validAppDefinition(app)
     result.isSuccess shouldBe true
   }
 
   test("cassandraWithoutResidencyWithUpgradeStrategy") {
-    import Formats._
 
     val f = new Fixture
-    val base = Json.parse(f.cassandraWithoutResidency).as[AppDefinition]
+    val base = Raml.fromRaml(Json.parse(f.cassandraWithoutResidency).as[App])
     val app = base.copy(upgradeStrategy = UpgradeStrategy(0, 0))
     val result = validAppDefinition(app)
     result.isSuccess shouldBe true

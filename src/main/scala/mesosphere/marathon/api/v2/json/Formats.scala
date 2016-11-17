@@ -13,7 +13,7 @@ import mesosphere.marathon.core.plugin.{ PluginDefinition, PluginDefinitions }
 import mesosphere.marathon.core.pod.PodDefinition
 import mesosphere.marathon.core.readiness.ReadinessCheck
 import mesosphere.marathon.core.task.Task
-import mesosphere.marathon.raml.{ Pod, Raml, Resources }
+import mesosphere.marathon.raml.{ App, Pod, Raml } //, Resources }
 import mesosphere.marathon.state._
 import mesosphere.marathon.upgrade.DeploymentManager.DeploymentStepInfo
 import mesosphere.marathon.upgrade._
@@ -503,12 +503,17 @@ trait DeploymentFormats {
 
   implicit lazy val GroupUpdateFormat: Format[GroupUpdate] = (
     (__ \ "id").formatNullable[PathId] ~
-    (__ \ "apps").formatNullable[Set[AppDefinition]] ~
+    (__ \ "apps").formatNullable[Set[App]] ~
     (__ \ "groups").lazyFormatNullable(implicitly[Format[Set[GroupUpdate]]]) ~
     (__ \ "dependencies").formatNullable[Set[PathId]] ~
     (__ \ "scaleBy").formatNullable[Double] ~
     (__ \ "version").formatNullable[Timestamp]
-  ) (GroupUpdate(_, _, _, _, _, _), unlift(GroupUpdate.unapply))
+  ) (
+      { (id, apps, groups, dependencies, scaleBy, version) =>
+        GroupUpdate(id, apps.map(_.map(Raml.fromRaml(_))), groups, dependencies, scaleBy, version)
+      },
+      { g: GroupUpdate => (g.id, g.apps.map(_.map(Raml.toRaml(_))), g.groups, g.dependencies, g.scaleBy, g.version) }
+    )
 
   implicit lazy val URLToStringMapFormat: Format[Map[java.net.URL, String]] = Format(
     Reads.of[Map[String, String]]
@@ -943,132 +948,132 @@ trait AppAndGroupFormats {
     }
   )
 
-  implicit lazy val AppDefinitionReads: Reads[AppDefinition] = {
-    val executorPattern = "^(//cmd)|(/?[^/]+(/[^/]+)*)|$".r
-    (
-      (__ \ "id").read[PathId].filterNot(_.isRoot) ~
-      (__ \ "cmd").readNullable[String](Reads.minLength(1)) ~
-      (__ \ "args").readNullable[Seq[String]].withDefault(Seq.empty[String]) ~
-      (__ \ "user").readNullable[String] ~
-      (__ \ "env").readNullable[Map[String, EnvVarValue]].withDefault(AppDefinition.DefaultEnv) ~
-      (__ \ "instances").readNullable[Int].withDefault(AppDefinition.DefaultInstances) ~
-      (__ \ "cpus").readNullable[Double].withDefault(AppDefinition.DefaultCpus) ~
-      (__ \ "mem").readNullable[Double].withDefault(AppDefinition.DefaultMem) ~
-      (__ \ "disk").readNullable[Double].withDefault(AppDefinition.DefaultDisk) ~
-      (__ \ "gpus").readNullable[Int].withDefault(AppDefinition.DefaultGpus) ~
-      (__ \ "executor").readNullable[String](Reads.pattern(executorPattern))
-      .withDefault(AppDefinition.DefaultExecutor) ~
-      (__ \ "constraints").readNullable[Set[Constraint]].withDefault(AppDefinition.DefaultConstraints) ~
-      (__ \ "storeUrls").readNullable[Seq[String]].withDefault(AppDefinition.DefaultStoreUrls) ~
-      (__ \ "requirePorts").readNullable[Boolean].withDefault(AppDefinition.DefaultRequirePorts) ~
-      (__ \ "backoffSeconds").readNullable[Long].withDefault(AppDefinition.DefaultBackoff.toSeconds).asSeconds ~
-      (__ \ "backoffFactor").readNullable[Double].withDefault(AppDefinition.DefaultBackoffFactor) ~
-      (__ \ "maxLaunchDelaySeconds").readNullable[Long]
-      .withDefault(AppDefinition.DefaultMaxLaunchDelay.toSeconds).asSeconds ~
-      (__ \ "container").readNullable[Container] ~
-      (__ \ "healthChecks").readNullable[Set[HealthCheck]].withDefault(AppDefinition.DefaultHealthChecks)
-    ) ((
-        id, cmd, args, maybeString, env, instances, cpus, mem, disk, gpus, executor, constraints, storeUrls,
-        requirePorts, backoff, backoffFactor, maxLaunchDelay, container, checks
-      ) => AppDefinition(
-        id = id, cmd = cmd, args = args, user = maybeString, env = env, instances = instances,
-        resources = Resources(cpus = cpus, mem = mem, disk = disk, gpus = gpus),
-        executor = executor, constraints = constraints, storeUrls = storeUrls,
-        requirePorts = requirePorts,
-        backoffStrategy = BackoffStrategy(backoff = backoff, factor = backoffFactor, maxLaunchDelay = maxLaunchDelay),
-        container = container,
-        healthChecks = checks)).flatMap { app =>
-        // necessary because of case class limitations (good for another 21 fields)
-        case class ExtraFields(
-            uris: Seq[String],
-            fetch: Seq[FetchUri],
-            dependencies: Set[PathId],
-            maybePorts: Option[Seq[Int]],
-            upgradeStrategy: Option[UpgradeStrategy],
-            labels: Map[String, String],
-            acceptedResourceRoles: Set[String],
-            ipAddress: Option[IpAddress],
-            version: Timestamp,
-            residency: Option[Residency],
-            maybePortDefinitions: Option[Seq[PortDefinition]],
-            readinessChecks: Seq[ReadinessCheck],
-            secrets: Map[String, Secret],
-            maybeTaskKillGracePeriod: Option[FiniteDuration]) {
-          def upgradeStrategyOrDefault: UpgradeStrategy = {
-            import UpgradeStrategy.{ empty, forResidentTasks }
-            upgradeStrategy.getOrElse {
-              if (residencyOrDefault.isDefined || app.externalVolumes.nonEmpty) forResidentTasks else empty
-            }
-          }
-          def residencyOrDefault: Option[Residency] = {
-            residency.orElse(if (app.persistentVolumes.nonEmpty) Some(Residency.defaultResidency) else None)
-          }
-        }
-
-        val extraReads: Reads[ExtraFields] =
-          (
-            (__ \ "uris").readNullable[Seq[String]].withDefault(AppDefinition.DefaultUris) ~
-            (__ \ "fetch").readNullable[Seq[FetchUri]].withDefault(AppDefinition.DefaultFetch) ~
-            (__ \ "dependencies").readNullable[Set[PathId]].withDefault(AppDefinition.DefaultDependencies) ~
-            (__ \ "ports").readNullable[Seq[Int]](uniquePorts) ~
-            (__ \ "upgradeStrategy").readNullable[UpgradeStrategy] ~
-            (__ \ "labels").readNullable[Map[String, String]].withDefault(AppDefinition.Labels.Default) ~
-            (__ \ "acceptedResourceRoles").readNullable[Set[String]](nonEmpty).withDefault(Set.empty[String]) ~
-            (__ \ "ipAddress").readNullable[IpAddress] ~
-            (__ \ "version").readNullable[Timestamp].withDefault(Timestamp.now()) ~
-            (__ \ "residency").readNullable[Residency] ~
-            (__ \ "portDefinitions").readNullable[Seq[PortDefinition]] ~
-            (__ \ "readinessChecks").readNullable[Seq[ReadinessCheck]].withDefault(
-              AppDefinition.DefaultReadinessChecks) ~
-            (__ \ "secrets").readNullable[Map[String, Secret]].withDefault(AppDefinition.DefaultSecrets) ~
-            (__ \ "taskKillGracePeriodSeconds").readNullable[Long].map(_.map(_.seconds))
-          )(ExtraFields)
-            .filter(ValidationError("You cannot specify both uris and fetch fields")) { extra =>
-              !(extra.uris.nonEmpty && extra.fetch.nonEmpty)
-            }
-            .filter(ValidationError("You cannot specify both an IP address and ports")) { extra =>
-              val appWithoutPorts = extra.maybePorts.forall(_.isEmpty) && extra.maybePortDefinitions.forall(_.isEmpty)
-              appWithoutPorts || extra.ipAddress.isEmpty
-            }
-            .filter(ValidationError("You cannot specify both ports and port definitions")) { extra =>
-              val portDefinitionsIsEquivalentToPorts = extra.maybePortDefinitions.map(_.map(_.port)) == extra.maybePorts
-              portDefinitionsIsEquivalentToPorts || extra.maybePorts.isEmpty || extra.maybePortDefinitions.isEmpty
-            }
-
-        extraReads.map { extra =>
-          def fetch: Seq[FetchUri] =
-            if (extra.fetch.nonEmpty) extra.fetch
-            else extra.uris.map { uri => FetchUri(uri = uri, extract = FetchUri.isExtract(uri)) }
-
-          // Normally, our default is one port. If an ipAddress is defined that would lead to an error
-          // if left unchanged.
-          def portDefinitions: Seq[PortDefinition] = extra.ipAddress match {
-            case Some(ipAddress) => Seq.empty[PortDefinition]
-            case None =>
-              extra.maybePortDefinitions.getOrElse {
-                extra.maybePorts.map { ports =>
-                  PortDefinitions.apply(ports: _*)
-                }.getOrElse(AppDefinition.DefaultPortDefinitions)
-              }
-          }
-
-          app.copy(
-            fetch = fetch,
-            dependencies = extra.dependencies,
-            portDefinitions = portDefinitions,
-            upgradeStrategy = extra.upgradeStrategyOrDefault,
-            labels = extra.labels,
-            acceptedResourceRoles = extra.acceptedResourceRoles,
-            ipAddress = extra.ipAddress,
-            versionInfo = VersionInfo.OnlyVersion(extra.version),
-            residency = extra.residencyOrDefault,
-            readinessChecks = extra.readinessChecks,
-            secrets = extra.secrets,
-            taskKillGracePeriod = extra.maybeTaskKillGracePeriod
-          )
-        }
-      }
-  }.map(addHealthCheckPortIndexIfNecessary)
+  //  implicit lazy val AppDefinitionReads: Reads[AppDefinition] = {
+  //    val executorPattern = "^(//cmd)|(/?[^/]+(/[^/]+)*)|$".r
+  //    (
+  //      (__ \ "id").read[PathId].filterNot(_.isRoot) ~
+  //      (__ \ "cmd").readNullable[String](Reads.minLength(1)) ~
+  //      (__ \ "args").readNullable[Seq[String]].withDefault(Seq.empty[String]) ~
+  //      (__ \ "user").readNullable[String] ~
+  //      (__ \ "env").readNullable[Map[String, EnvVarValue]].withDefault(AppDefinition.DefaultEnv) ~
+  //      (__ \ "instances").readNullable[Int].withDefault(AppDefinition.DefaultInstances) ~
+  //      (__ \ "cpus").readNullable[Double].withDefault(AppDefinition.DefaultCpus) ~
+  //      (__ \ "mem").readNullable[Double].withDefault(AppDefinition.DefaultMem) ~
+  //      (__ \ "disk").readNullable[Double].withDefault(AppDefinition.DefaultDisk) ~
+  //      (__ \ "gpus").readNullable[Int].withDefault(AppDefinition.DefaultGpus) ~
+  //      (__ \ "executor").readNullable[String](Reads.pattern(executorPattern))
+  //      .withDefault(AppDefinition.DefaultExecutor) ~
+  //      (__ \ "constraints").readNullable[Set[Constraint]].withDefault(AppDefinition.DefaultConstraints) ~
+  //      (__ \ "storeUrls").readNullable[Seq[String]].withDefault(AppDefinition.DefaultStoreUrls) ~
+  //      (__ \ "requirePorts").readNullable[Boolean].withDefault(AppDefinition.DefaultRequirePorts) ~
+  //      (__ \ "backoffSeconds").readNullable[Long].withDefault(AppDefinition.DefaultBackoff.toSeconds).asSeconds ~
+  //      (__ \ "backoffFactor").readNullable[Double].withDefault(AppDefinition.DefaultBackoffFactor) ~
+  //      (__ \ "maxLaunchDelaySeconds").readNullable[Long]
+  //      .withDefault(AppDefinition.DefaultMaxLaunchDelay.toSeconds).asSeconds ~
+  //      (__ \ "container").readNullable[Container] ~
+  //      (__ \ "healthChecks").readNullable[Set[HealthCheck]].withDefault(AppDefinition.DefaultHealthChecks)
+  //    ) ((
+  //        id, cmd, args, maybeString, env, instances, cpus, mem, disk, gpus, executor, constraints, storeUrls,
+  //        requirePorts, backoff, backoffFactor, maxLaunchDelay, container, checks
+  //      ) => AppDefinition(
+  //        id = id, cmd = cmd, args = args, user = maybeString, env = env, instances = instances,
+  //        resources = Resources(cpus = cpus, mem = mem, disk = disk, gpus = gpus),
+  //        executor = executor, constraints = constraints, storeUrls = storeUrls,
+  //        requirePorts = requirePorts,
+  //        backoffStrategy = BackoffStrategy(backoff = backoff, factor = backoffFactor, maxLaunchDelay = maxLaunchDelay),
+  //        container = container,
+  //        healthChecks = checks)).flatMap { app =>
+  //        // necessary because of case class limitations (good for another 21 fields)
+  //        case class ExtraFields(
+  //            uris: Seq[String],
+  //            fetch: Seq[FetchUri],
+  //            dependencies: Set[PathId],
+  //            maybePorts: Option[Seq[Int]],
+  //            upgradeStrategy: Option[UpgradeStrategy],
+  //            labels: Map[String, String],
+  //            acceptedResourceRoles: Set[String],
+  //            ipAddress: Option[IpAddress],
+  //            version: Timestamp,
+  //            residency: Option[Residency],
+  //            maybePortDefinitions: Option[Seq[PortDefinition]],
+  //            readinessChecks: Seq[ReadinessCheck],
+  //            secrets: Map[String, Secret],
+  //            maybeTaskKillGracePeriod: Option[FiniteDuration]) {
+  //          def upgradeStrategyOrDefault: UpgradeStrategy = {
+  //            import UpgradeStrategy.{ empty, forResidentTasks }
+  //            upgradeStrategy.getOrElse {
+  //              if (residencyOrDefault.isDefined || app.externalVolumes.nonEmpty) forResidentTasks else empty
+  //            }
+  //          }
+  //          def residencyOrDefault: Option[Residency] = {
+  //            residency.orElse(if (app.persistentVolumes.nonEmpty) Some(Residency.defaultResidency) else None)
+  //          }
+  //        }
+  //
+  //        val extraReads: Reads[ExtraFields] =
+  //          (
+  //            (__ \ "uris").readNullable[Seq[String]].withDefault(AppDefinition.DefaultUris) ~
+  //            (__ \ "fetch").readNullable[Seq[FetchUri]].withDefault(AppDefinition.DefaultFetch) ~
+  //            (__ \ "dependencies").readNullable[Set[PathId]].withDefault(AppDefinition.DefaultDependencies) ~
+  //            (__ \ "ports").readNullable[Seq[Int]](uniquePorts) ~
+  //            (__ \ "upgradeStrategy").readNullable[UpgradeStrategy] ~
+  //            (__ \ "labels").readNullable[Map[String, String]].withDefault(AppDefinition.Labels.Default) ~
+  //            (__ \ "acceptedResourceRoles").readNullable[Set[String]](nonEmpty).withDefault(Set.empty[String]) ~
+  //            (__ \ "ipAddress").readNullable[IpAddress] ~
+  //            (__ \ "version").readNullable[Timestamp].withDefault(Timestamp.now()) ~
+  //            (__ \ "residency").readNullable[Residency] ~
+  //            (__ \ "portDefinitions").readNullable[Seq[PortDefinition]] ~
+  //            (__ \ "readinessChecks").readNullable[Seq[ReadinessCheck]].withDefault(
+  //              AppDefinition.DefaultReadinessChecks) ~
+  //            (__ \ "secrets").readNullable[Map[String, Secret]].withDefault(AppDefinition.DefaultSecrets) ~
+  //            (__ \ "taskKillGracePeriodSeconds").readNullable[Long].map(_.map(_.seconds))
+  //          )(ExtraFields)
+  //            .filter(ValidationError("You cannot specify both uris and fetch fields")) { extra =>
+  //              !(extra.uris.nonEmpty && extra.fetch.nonEmpty)
+  //            }
+  //            .filter(ValidationError("You cannot specify both an IP address and ports")) { extra =>
+  //              val appWithoutPorts = extra.maybePorts.forall(_.isEmpty) && extra.maybePortDefinitions.forall(_.isEmpty)
+  //              appWithoutPorts || extra.ipAddress.isEmpty
+  //            }
+  //            .filter(ValidationError("You cannot specify both ports and port definitions")) { extra =>
+  //              val portDefinitionsIsEquivalentToPorts = extra.maybePortDefinitions.map(_.map(_.port)) == extra.maybePorts
+  //              portDefinitionsIsEquivalentToPorts || extra.maybePorts.isEmpty || extra.maybePortDefinitions.isEmpty
+  //            }
+  //
+  //        extraReads.map { extra =>
+  //          def fetch: Seq[FetchUri] =
+  //            if (extra.fetch.nonEmpty) extra.fetch
+  //            else extra.uris.map { uri => FetchUri(uri = uri, extract = FetchUri.isExtract(uri)) }
+  //
+  //          // Normally, our default is one port. If an ipAddress is defined that would lead to an error
+  //          // if left unchanged.
+  //          def portDefinitions: Seq[PortDefinition] = extra.ipAddress match {
+  //            case Some(ipAddress) => Seq.empty[PortDefinition]
+  //            case None =>
+  //              extra.maybePortDefinitions.getOrElse {
+  //                extra.maybePorts.map { ports =>
+  //                  PortDefinitions.apply(ports: _*)
+  //                }.getOrElse(AppDefinition.DefaultPortDefinitions)
+  //              }
+  //          }
+  //
+  //          app.copy(
+  //            fetch = fetch,
+  //            dependencies = extra.dependencies,
+  //            portDefinitions = portDefinitions,
+  //            upgradeStrategy = extra.upgradeStrategyOrDefault,
+  //            labels = extra.labels,
+  //            acceptedResourceRoles = extra.acceptedResourceRoles,
+  //            ipAddress = extra.ipAddress,
+  //            versionInfo = VersionInfo.OnlyVersion(extra.version),
+  //            residency = extra.residencyOrDefault,
+  //            readinessChecks = extra.readinessChecks,
+  //            secrets = extra.secrets,
+  //            taskKillGracePeriod = extra.maybeTaskKillGracePeriod
+  //          )
+  //        }
+  //      }
+  //  }.map(addHealthCheckPortIndexIfNecessary)
 
   /**
     * Ensure backwards compatibility by adding portIndex to health checks when necessary.
@@ -1405,18 +1410,21 @@ trait AppAndGroupFormats {
 
   implicit lazy val GroupFormat: Format[Group] = (
     (__ \ "id").format[PathId] ~
-    (__ \ "apps").formatNullable[Iterable[AppDefinition]].withDefault(Iterable.empty) ~
+    (__ \ "apps").formatNullable[Iterable[App]].withDefault(Iterable.empty) ~
     (__ \ "pods").formatNullable[Iterable[Pod]].withDefault(Iterable.empty) ~
     (__ \ "groups").lazyFormatNullable(implicitly[Format[Iterable[Group]]]).withDefault(Iterable.empty) ~
     (__ \ "dependencies").formatNullable[Set[PathId]].withDefault(Group.defaultDependencies) ~
     (__ \ "version").formatNullable[Timestamp].withDefault(Group.defaultVersion)
   ) (
       (id, apps, pods, groups, dependencies, version) =>
-        Group(id = id, apps = apps.map(app => app.id -> app)(collection.breakOut),
-          pods.map(p => PathId(p.id).canonicalPath() -> Raml.fromRaml(p))(collection.breakOut),
+        Group(
+          id = id,
+          apps = apps.map(app => PathId(app.id) -> Raml.fromRaml[App, AppDefinition](app))(collection.breakOut),
+          pods = pods.map(p => PathId(p.id).canonicalPath() -> Raml.fromRaml(p))(collection.breakOut),
           groupsById = groups.map(group => group.id -> group)(collection.breakOut),
-          dependencies = dependencies, version = version),
-      { (g: Group) => (g.id, g.apps.values, g.pods.values.map(Raml.toRaml(_)), g.groups, g.dependencies, g.version) })
+          dependencies = dependencies,
+          version = version),
+      { (g: Group) => (g.id, g.apps.values.map(Raml.toRaml(_)), g.pods.values.map(Raml.toRaml(_)), g.groups, g.dependencies, g.version) })
 
   implicit lazy val PortDefinitionFormat: Format[PortDefinition] = (
     (__ \ "port").formatNullable[Int].withDefault(AppDefinition.RandomPortValue) ~
