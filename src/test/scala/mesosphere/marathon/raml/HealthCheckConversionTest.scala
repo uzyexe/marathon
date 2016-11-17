@@ -1,10 +1,10 @@
 package mesosphere.marathon
 package raml
 
+import mesosphere.FunTest
 import mesosphere.marathon.core.health._
-import mesosphere.marathon.test.MarathonSpec
 
-class HealthCheckConversionTest extends MarathonSpec {
+class HealthCheckConversionTest extends FunTest {
 
   test("A MarathonHttpHealthCheck is converted correctly") {
     Given("A MarathonHttpHealthCheck")

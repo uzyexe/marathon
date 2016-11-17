@@ -1,9 +1,9 @@
 package mesosphere.marathon
 package raml
 
-import mesosphere.marathon.test.MarathonSpec
+import mesosphere.FunTest
 
-class ConstraintConversionTest extends MarathonSpec {
+class ConstraintConversionTest extends FunTest {
 
   test("A Constraint can be transformed into a Seq[String]") {
     Given("A constraint proto")

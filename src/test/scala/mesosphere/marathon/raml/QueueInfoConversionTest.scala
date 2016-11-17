@@ -1,16 +1,17 @@
 package mesosphere.marathon
 package raml
 
+import mesosphere.FunTest
 import mesosphere.marathon.core.base.ConstantClock
 import mesosphere.marathon.core.launcher.OfferMatchResult
 import mesosphere.marathon.core.launchqueue.LaunchQueue.QueuedInstanceInfoWithStatistics
 import mesosphere.marathon.state.{ AppDefinition, PathId, Timestamp }
-import mesosphere.marathon.test.{ MarathonSpec, MarathonTestHelper }
+import mesosphere.marathon.test.MarathonTestHelper
 import mesosphere.mesos.NoOfferMatchReason
 import mesosphere.mesos.protos.{ ScalarResource, TextAttribute }
 import org.apache.mesos.{ Protos => Mesos }
 
-class QueueInfoConversionTest extends MarathonSpec {
+class QueueInfoConversionTest extends FunTest {
 
   test("A reject reason is converted correctly") {
     Given("A reject reason")

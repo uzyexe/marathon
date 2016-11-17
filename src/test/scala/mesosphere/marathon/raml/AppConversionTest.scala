@@ -1,14 +1,14 @@
 package mesosphere.marathon
 package raml
 
+import mesosphere.FunTest
 import mesosphere.marathon.api.v2.json.Formats
 import mesosphere.marathon.core.health.{ MarathonHttpHealthCheck, PortReference }
 import mesosphere.marathon.state.{ AppDefinition, BackoffStrategy, FetchUri, PathId }
-import mesosphere.marathon.test.MarathonSpec
 import play.api.libs.json.{ JsObject, Json }
 import org.apache.mesos.{ Protos => Mesos }
 
-class AppConversionTest extends MarathonSpec {
+class AppConversionTest extends FunTest {
 
   test("An app is written to json and can be read again via formats") {
     Given("An app")
@@ -41,6 +41,7 @@ class AppConversionTest extends MarathonSpec {
     When("The app is translated to json and read back from formats")
     val json = Json.toJson(app.toRaml[App])
     //filter out values that are written, but are not expected to read back
+    //TODO: filtering is not needed, once we have the raml reads functionality
     val doNotRender = Set("uris", "ports", "version", "versionInfo")
     val cleanJson = JsObject(json.as[JsObject].value.filterKeys(field => !doNotRender(field)).toSeq)
     val readApp = cleanJson.as[AppDefinition](Formats.AppDefinitionReads).copy(versionInfo = app.versionInfo)

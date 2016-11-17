@@ -42,10 +42,13 @@ types:
         type: integer
         format: int64
         minimum: 0
-        description: ???
+        description: |
+          For `root` mesos disk resources, the optional maximum size of an exclusive mount volume to be considered.
       constraints?:
-        type: constraints.AppConstraint[]
-        description: ???
+        type: constraints.ConstraintStringArray[]
+        description: |
+          Constraints restricting where new persistent volumes should be created.
+          Currently, it is only possible to constrain the path of the disk resource by regular expression.
   ExternalVolume:
     type: object
     properties:

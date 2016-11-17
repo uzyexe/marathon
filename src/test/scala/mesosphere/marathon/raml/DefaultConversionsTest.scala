@@ -3,9 +3,9 @@ package raml
 
 import java.util
 
-import mesosphere.marathon.test.MarathonSpec
+import mesosphere.FunTest
 
-class DefaultConversionsTest extends MarathonSpec with DefaultConversions {
+class DefaultConversionsTest extends FunTest with DefaultConversions {
 
   implicit val intToStringWrites: Writes[Int, String] = Writes { _.toString }
 

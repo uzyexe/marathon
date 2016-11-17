@@ -1,9 +1,9 @@
 package mesosphere.marathon
 package raml
 
-import mesosphere.marathon.test.MarathonSpec
+import mesosphere.FunTest
 
-class ReadinessConversionsTest extends MarathonSpec {
+class ReadinessConversionsTest extends FunTest {
 
   test("A readiness check can be converted") {
     Given("A readiness check")

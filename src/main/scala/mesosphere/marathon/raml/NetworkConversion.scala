@@ -1,4 +1,5 @@
-package mesosphere.marathon.raml
+package mesosphere.marathon
+package raml
 
 import mesosphere.marathon.core.pod
 import mesosphere.marathon.state

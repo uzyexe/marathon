@@ -1,10 +1,10 @@
 package mesosphere.marathon
 package raml
 
-import mesosphere.marathon.test.MarathonSpec
+import mesosphere.FunTest
 import org.apache.mesos.{ Protos => Mesos }
 
-class ContainerConversionTest extends MarathonSpec {
+class ContainerConversionTest extends FunTest {
 
   test("A Mesos Plain container is created correctly") {
     Given("A mesos container")

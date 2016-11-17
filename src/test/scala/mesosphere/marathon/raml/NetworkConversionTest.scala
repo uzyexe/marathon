@@ -1,10 +1,10 @@
 package mesosphere.marathon
 package raml
 
+import mesosphere.FunTest
 import mesosphere.marathon.state.Container.PortMapping
-import mesosphere.marathon.test.MarathonSpec
 
-class NetworkConversionTest extends MarathonSpec {
+class NetworkConversionTest extends FunTest {
 
   test("protocol is converted correctly") {
     "tcp".toRaml[NetworkProtocol] should be(NetworkProtocol.Tcp)
