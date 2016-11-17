@@ -108,8 +108,8 @@ class AppDeployIntegrationTest
       appProxy(testBasePath / s"app${UUID.randomUUID()}", "v1", instances = 1, withHealth = false)
         .copy(
           cmd = Some("false"),
-          backoffSeconds = Some(1.hour.toSeconds.toInt),
-          maxLaunchDelaySeconds = Some(1.hour.toSeconds.toInt))
+          backoffSeconds = Some(1.hour.toSeconds),
+          maxLaunchDelaySeconds = Some(1.hour.toSeconds))
 
     When("we request to deploy the app")
     val result = marathon.createAppV2(app)
@@ -189,7 +189,7 @@ class AppDeployIntegrationTest
   test("create a simple app with a Mesos HTTP health check") {
     Given("a new app")
     val app = appProxy(testBasePath / "mesos-http-app", "v1", instances = 1, withHealth = false).
-      copy(healthChecks = Set(mesosHttpHealthCheck))
+      copy(healthChecks = Seq(ramlHealthCheck.copy(protocol = Some(AppHealthCheckProtocol.MesosHttp))))
     val check = appProxyCheck(app.id, "v1", true)
 
     When("The app is deployed")
@@ -239,7 +239,7 @@ class AppDeployIntegrationTest
   test("create a simple app with a Mesos TCP healh check") {
     Given("a new app")
     val app = appProxy(testBasePath / "tcp-app", "v1", instances = 1, withHealth = false).
-      copy(healthChecks = Set(mesosTcpHealthCheck))
+      copy(healthChecks = Seq(ramlHealthCheck.copy(protocol = Some(AppHealthCheckProtocol.Tcp))))
 
     When("The app is deployed")
     val result = marathon.createAppV2(app)

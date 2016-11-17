@@ -12,7 +12,6 @@ import akka.stream.ActorMaterializer
 import akka.testkit.TestActorRef
 import akka.util.Timeout
 import com.codahale.metrics.MetricRegistry
-import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.pod.{ BridgeNetwork, ContainerNetwork }
 import mesosphere.marathon.io.storage.StorageProvider
 import mesosphere.marathon.metrics.Metrics
@@ -362,6 +361,6 @@ class GroupManagerActorTest extends Mockito with Matchers with MarathonSpec {
     gid,
     _.update(gid, fn, version),
     version,
-    false,
+    force = false,
     Map.empty)
 }

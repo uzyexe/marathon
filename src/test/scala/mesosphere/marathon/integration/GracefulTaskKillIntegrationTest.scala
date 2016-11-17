@@ -31,7 +31,7 @@ class GracefulTaskKillIntegrationTest
     val app = App(
       (testBasePath / "app").toString,
       cmd = Some(appCommand),
-      taskKillGracePeriodSeconds = Some(taskKillGracePeriod.toSeconds.toInt))
+      taskKillGracePeriodSeconds = Some(taskKillGracePeriod.toSeconds))
 
     When("The app is deployed")
     val result = marathon.createAppV2(app)
@@ -63,7 +63,7 @@ class GracefulTaskKillIntegrationTest
     val app = App(
       (testBasePath / "app").toString,
       cmd = Some("sleep 100000"),
-      taskKillGracePeriodSeconds = Some(taskKillGracePeriod.toSeconds.toInt))
+      taskKillGracePeriodSeconds = Some(taskKillGracePeriod.toSeconds))
 
     When("The app is deployed")
     val result = marathon.createAppV2(app)

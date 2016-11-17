@@ -297,7 +297,7 @@ class ResidentTaskIntegrationTest
         mem = Some(mem),
         disk = Some(disk),
         portDefinitions = portDefinitions,
-        backoffSeconds = Some(backoffDuration.toSeconds.toInt),
+        backoffSeconds = Some(backoffDuration.toSeconds),
         upgradeStrategy = Some(UpgradeStrategy(Some(0.5), Some(0.0)))
       )
 

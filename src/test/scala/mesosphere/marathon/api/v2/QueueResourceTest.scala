@@ -76,7 +76,7 @@ class QueueResourceTest extends MarathonSpec with Matchers with Mockito with Giv
       )
     )
     //when
-    val response = queueResource.index(auth.request, new java.util.HashSet())
+    val response = queueResource.index(auth.request, Set.empty)
 
     //then
     response.getStatus should be(200)
@@ -125,7 +125,7 @@ class QueueResourceTest extends MarathonSpec with Matchers with Mockito with Giv
     val req = auth.request
 
     When("the index is fetched")
-    val index = queueResource.index(req, new java.util.HashSet())
+    val index = queueResource.index(req, Set.empty)
     Then("we receive a NotAuthenticated response")
     index.getStatus should be(auth.NotAuthenticatedStatus)
 
