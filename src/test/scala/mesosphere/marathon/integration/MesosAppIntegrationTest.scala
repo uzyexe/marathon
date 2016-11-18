@@ -265,8 +265,8 @@ class MesosAppIntegrationTest
     deleteResult.code should be (202)
 
     Then("the deployment should be gone")
-    waitForEvent("deployment_failed")
-    waitForEvent("deployment_success")
+    waitForEvent("deployment_failed") // ScalePod
+    waitForEvent("deployment_success") // StopPod
     WaitTestSupport.waitUntil("Deployments get removed from the queue", 30.seconds) {
       marathon.listDeploymentsForBaseGroup().value.isEmpty
     }
@@ -295,8 +295,8 @@ class MesosAppIntegrationTest
     deleteResult.code should be (200)
 
     Then("the deployment should be gone")
-    waitForEvent("deployment_failed")
-    waitForEvent("deployment_success")
+    waitForEvent("deployment_failed") // ScalePod
+    waitForEvent("deployment_success") // StopPod
     WaitTestSupport.waitUntil("Deployments get removed from the queue", 30.seconds) {
       marathon.listDeploymentsForBaseGroup().value.isEmpty
     }
@@ -328,18 +328,8 @@ class MesosAppIntegrationTest
     deleteResult1.code should be (200)
 
     Then("The deleted instance should be restarted")
-    waitForEventMatching("instance_changed_event")(callbackEvent =>
-      callbackEvent.eventType == "instance_changed_event" &&
-        callbackEvent.info.get("condition") == "Killed"
-    )
-    waitForEventMatching("instance_changed_event")(callbackEvent =>
-      callbackEvent.eventType == "instance_changed_event" &&
-        callbackEvent.info.get("condition") == "Created"
-    )
-    waitForEventMatching("instance_changed_event")(callbackEvent =>
-      callbackEvent.eventType == "instance_changed_event" &&
-        callbackEvent.info.get("condition") == "Running"
-    )
+    waitForEventWith("status_update_event", _.info("taskStatus") == "TASK_KILLED")
+    waitForEventWith("status_update_event", _.info("taskStatus") == "TASK_RUNNING")
     val status2 = marathon.status(pod.id)
     status2.code should be (200)
     status2.value.instances should have size 3

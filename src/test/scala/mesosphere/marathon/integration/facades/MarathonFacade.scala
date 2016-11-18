@@ -60,7 +60,7 @@ case class ITQueueDelay(timeLeftSeconds: Int, overdue: Boolean)
 case class ITQueueItem(app: AppDefinition, count: Int, delay: ITQueueDelay)
 case class ITLaunchQueue(queue: List[ITQueueItem])
 
-case class ITDeployment(id: String, affectedApps: Seq[String])
+case class ITDeployment(id: String, affectedApps: Seq[String], affectedPods: Seq[String])
 
 /**
   * The MarathonFacade offers the REST API of a remote marathon instance
@@ -323,7 +323,8 @@ class MarathonFacade(val url: String, baseGroup: PathId, waitTime: Duration = 30
     val pipeline = marathonSendReceive ~> read[List[ITDeployment]]
     result(pipeline(Get(s"$url/v2/deployments")), waitTime).map { deployments =>
       deployments.filter { deployment =>
-        deployment.affectedApps.map(PathId(_)).exists(id => isInBaseGroup(id))
+        deployment.affectedApps.map(PathId(_)).exists(id => isInBaseGroup(id)) ||
+        deployment.affectedPods.map(PathId(_)).exists(id => isInBaseGroup(id))
       }
     }
   }
