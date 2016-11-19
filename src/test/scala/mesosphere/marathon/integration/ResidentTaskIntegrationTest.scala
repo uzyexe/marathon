@@ -6,7 +6,7 @@ import mesosphere.marathon.integration.facades.ITEnrichedTask
 import mesosphere.marathon.integration.facades.MarathonFacade._
 import mesosphere.marathon.integration.facades.MesosFacade.{ ITMesosState, ITResources }
 import mesosphere.marathon.integration.setup.{ IntegrationFunSuite, IntegrationTag, RestResult, SingleMarathonIntegrationTest }
-import mesosphere.marathon.raml.{ App, AppResidency, AppUpdate, AppVolume, Container, EngineType, PersistentVolume, PortDefinition, PortDefinitions, ReadMode, TaskLostBehavior, UpgradeStrategy }
+import mesosphere.marathon.raml.{ App, AppResidency, AppUpdate, AppVolume, Container, EngineType, PersistentVolume, PortDefinition, PortDefinitions, ReadMode, UpgradeStrategy }
 import mesosphere.marathon.state.PathId
 import org.scalatest.{ BeforeAndAfter, GivenWhenThen, Matchers, Tag }
 import org.slf4j.LoggerFactory
@@ -285,7 +285,7 @@ class ResidentTaskIntegrationTest
       val app = App(
         appId.toString,
         instances = Some(instances),
-        residency = Some(AppResidency(3600, Some(TaskLostBehavior.WaitForever))),
+        residency = Some(AppResidency()),
         constraints = constraints,
         container = Some(Container(
           `type` = EngineType.Mesos,
@@ -296,7 +296,7 @@ class ResidentTaskIntegrationTest
         cpus = Some(cpus),
         mem = Some(mem),
         disk = Some(disk),
-        portDefinitions = portDefinitions,
+        portDefinitions = Some(portDefinitions),
         backoffSeconds = Some(backoffDuration.toSeconds),
         upgradeStrategy = Some(UpgradeStrategy(Some(0.5), Some(0.0)))
       )

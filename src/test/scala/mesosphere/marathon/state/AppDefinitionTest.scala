@@ -125,7 +125,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
 
     val proto = app.toProto
     proto.getId should be("app-with-ip-address")
-    proto.hasIpAddress should be (true)
+    assert(proto.getNetworksCount > 0)
 
     val read = AppDefinition(id = runSpecId).mergeFromProto(proto)
     read should be(app)
@@ -155,7 +155,7 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
 
     val proto = app.toProto
     proto.getId should be("app-with-ip-address")
-    proto.hasIpAddress should be (true)
+    assert(proto.getNetworksCount > 0)
 
     val read = AppDefinition(id = runSpecId).mergeFromProto(proto)
     read should be(app)
@@ -202,10 +202,16 @@ class AppDefinitionTest extends MarathonSpec with Matchers {
       ))
     )
 
-    val proto = app.toProto
+    val proto: Protos.ServiceDefinition = app.toProto
+    assert(proto.getNetworksCount > 0)
+    assert(proto.hasContainer)
 
-    proto.getIpAddress.hasDiscoveryInfo should be (true)
-    proto.getIpAddress.getDiscoveryInfo.getPortsList.size() should be (1)
+    val network = proto.getNetworks(0)
+    assert(network.getLabelsCount > 0)
+
+    val container = proto.getContainer
+    assert(container.getPortMappingsCount > 0)
+
     val read = AppDefinition(id = runSpecId).mergeFromProto(proto)
     read should equal(app)
   }

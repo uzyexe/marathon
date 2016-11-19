@@ -28,12 +28,7 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
 
   val labels = Map("foo" -> "bar", "test" -> "test")
   val runSpecId = PathId("/test")
-
-  val expectedLabels = MesosProtos.Labels.newBuilder.addAllLabels(
-    labels.map {
-      case (mKey, mValue) =>
-        MesosProtos.Label.newBuilder.setKey(mKey).setValue(mValue).build()
-    }).build
+  val expectedLabels = labels.toMesosLabels
 
   test("BuildIfMatches") {
     val offer = MarathonTestHelper.makeBasicOffer(cpus = 1.0, mem = 128.0, disk = 2000.0, beginPort = 31000, endPort = 32000).build
@@ -814,14 +809,8 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
 
     val networkInfoProto = MesosProtos.NetworkInfo.newBuilder
       .addIpAddresses(MesosProtos.NetworkInfo.IPAddress.getDefaultInstance)
-      .addAllGroups(Seq("a", "b", "c"))
-      .setLabels(
-        MesosProtos.Labels.newBuilder.addAllLabels(
-          Seq(
-            MesosProtos.Label.newBuilder.setKey("foo").setValue("bar").build,
-            MesosProtos.Label.newBuilder.setKey("baz").setValue("buzz").build
-          )
-        ))
+      .setName("whatever")
+      .setLabels(Map("foo" -> "bar", "baz" -> "buzz").toMesosLabels)
       .build
     TextFormat.shortDebugString(networkInfos.head) should equal(TextFormat.shortDebugString(networkInfoProto))
     networkInfos.head should equal(networkInfoProto)
@@ -844,14 +833,8 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
 
     val networkInfoProto = MesosProtos.NetworkInfo.newBuilder
       .addIpAddresses(MesosProtos.NetworkInfo.IPAddress.getDefaultInstance)
-      .addAllGroups(Seq("a", "b", "c"))
-      .setLabels(
-        MesosProtos.Labels.newBuilder.addAllLabels(
-          Seq(
-            MesosProtos.Label.newBuilder.setKey("foo").setValue("bar").build,
-            MesosProtos.Label.newBuilder.setKey("baz").setValue("buzz").build
-          )
-        ))
+      .setName("whatever")
+      .setLabels(Map("foo" -> "bar", "baz" -> "buzz").toMesosLabels)
       .build
     TextFormat.shortDebugString(networkInfos.head) should equal(TextFormat.shortDebugString(networkInfoProto))
     networkInfos.head should equal(networkInfoProto)
@@ -876,14 +859,7 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
 
     val networkInfoProto = MesosProtos.NetworkInfo.newBuilder
       .addIpAddresses(MesosProtos.NetworkInfo.IPAddress.getDefaultInstance)
-      .addAllGroups(Seq("a", "b", "c"))
-      .setLabels(
-        MesosProtos.Labels.newBuilder.addAllLabels(
-          Seq(
-            MesosProtos.Label.newBuilder.setKey("foo").setValue("bar").build,
-            MesosProtos.Label.newBuilder.setKey("baz").setValue("buzz").build
-          )
-        ))
+      .setLabels(Map("foo" -> "bar", "baz" -> "buzz").toMesosLabels)
       .setName("foonet")
       .build
     TextFormat.shortDebugString(networkInfos.head) should equal(TextFormat.shortDebugString(networkInfoProto))
@@ -911,16 +887,10 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
 
     val networkInfoProto = MesosProtos.NetworkInfo.newBuilder
       .addIpAddresses(MesosProtos.NetworkInfo.IPAddress.getDefaultInstance)
-      .addAllGroups(Seq("a", "b", "c"))
-      .setLabels(
-        MesosProtos.Labels.newBuilder.addAllLabels(
-          Seq(
-            MesosProtos.Label.newBuilder.setKey("foo").setValue("bar").build,
-            MesosProtos.Label.newBuilder.setKey("baz").setValue("buzz").build
-          )
-        ))
+      .setName("whatever")
+      .setLabels(Map("foo" -> "bar", "baz" -> "buzz").toMesosLabels)
       .build
-    TextFormat.shortDebugString(networkInfos.head) should equal(TextFormat.shortDebugString(networkInfoProto))
+    TextFormat.printToString(networkInfos.head) should equal(TextFormat.printToString(networkInfoProto))
     networkInfos.head should equal(networkInfoProto)
 
     taskInfo.hasDiscovery should be (true)
@@ -936,10 +906,11 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
           .setName("http")
           .setNumber(80)
           .setProtocol("tcp")
+          .setLabels(Map("network-scope" -> "container").toMesosLabels)
           .build)
         .build)
       .build
-    TextFormat.shortDebugString(discoveryInfo) should equal(TextFormat.shortDebugString(discoveryInfoProto))
+    TextFormat.printToString(discoveryInfo) should equal(TextFormat.printToString(discoveryInfoProto))
     discoveryInfo should equal(discoveryInfoProto)
   }
 
@@ -1553,7 +1524,7 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
   }
 
   test("PortsEnvWithBothPortsAndMappings") {
-    val command =
+    a[IllegalArgumentException] shouldBe thrownBy {
       TaskBuilder.commandInfo(
         runSpec = AppDefinition(
           id = runSpecId,
@@ -1571,14 +1542,7 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
         hostPorts = Helpers.hostPorts(1000, 1001),
         envPrefix = None
       )
-    val env: Map[String, String] =
-      command.getEnvironment.getVariablesList.toList.map(v => v.getName -> v.getValue).toMap
-
-    assert("1000" == env("PORT_8080"))
-    assert("1001" == env("PORT_8081"))
-
-    assert(!env.contains("PORT_22"))
-    assert(!env.contains("PORT_23"))
+    }
   }
 
   test("TaskWillCopyFetchIntoCommand") {
@@ -1843,12 +1807,7 @@ class TaskBuilderTest extends MarathonSpec with Matchers {
         if (name != "") b.setName(name)
         if (protocol != "") b.setProtocol(protocol)
         if (labels.nonEmpty) {
-          val labelsBuilder = MesosProtos.Labels.newBuilder()
-          labels.foreach {
-            case (k, v) =>
-              labelsBuilder.addLabels(MesosProtos.Label.newBuilder().setKey(k).setValue(v))
-          }
-          b.setLabels(labelsBuilder)
+          b.setLabels(labels.toMesosLabels)
         }
         b.build
       }

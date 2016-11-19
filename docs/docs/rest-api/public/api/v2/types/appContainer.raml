@@ -3,6 +3,7 @@ uses:
   label: label.raml
   numbers: numberTypes.raml
   volumes: volumes.raml
+  strings: stringTypes.raml
 types:
   EngineType:
     type: string
@@ -75,7 +76,7 @@ types:
           This can be used to add metadata to be interpreted by external
           applications such as firewalls.
       name?:
-        type: string
+        type: strings.Name
         description:
           Name of the service hosted on this port.
           If provided, it must be unique over all port mappings.

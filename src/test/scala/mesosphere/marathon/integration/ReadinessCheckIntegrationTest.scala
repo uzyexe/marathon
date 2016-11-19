@@ -82,7 +82,7 @@ class ReadinessCheckIntegrationTest extends IntegrationFunSuite with SingleMarat
       cpus = Some(0.5),
       mem = Some(128.0),
       upgradeStrategy = Some(UpgradeStrategy(Some(0), Some(0))),
-      portDefinitions = Seq(PortDefinition(Some(0), name = Some("http"))),
+      portDefinitions = Some(Seq(PortDefinition(Some(0), name = Some("http")))),
       healthChecks =
         if (withHealth)
           Seq(AppHealthCheck(

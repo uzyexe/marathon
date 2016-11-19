@@ -80,7 +80,8 @@ class AppsResource @Inject() (
     @DefaultValue("false")@QueryParam("force") force: Boolean,
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
 
-    scala.util.Try[AppDefinition](Raml.fromRaml(preprocessApp(Json.parse(body).as[raml.App]))).map { rawApp =>
+    assumeValid {
+      val rawApp = Raml.fromRaml(preprocessApp(Json.parse(body).as[raml.App]))
       withValid(rawApp.withCanonizedIds()) { appDef =>
         val now = clock.now()
         val app = appDef.copy(versionInfo = VersionInfo.OnlyVersion(now))
@@ -107,13 +108,7 @@ class AppsResource @Inject() (
           .entity(jsonString(appWithDeployments))
           .build()
       }
-    }.recover {
-      // handle RAML validation errors
-      case vfe: ValidationFailedException =>
-        val entity = Json.toJson(vfe.failure).toString
-        Response.status(422).entity(entity).build()
-      case th => throw th
-    }.get
+    }
   }
 
   @GET
@@ -165,17 +160,19 @@ class AppsResource @Inject() (
     val appId = id.toRootPath
     val now = clock.now()
 
-    val appUpdate = preprocess(Json.parse(body).as[raml.AppUpdate])
-    withValid(appUpdate.copy(id = Some(appId.toString))) { appUpdate =>
-      val plan = result(groupManager.updateApp(appId, updateOrCreate(appId, _, appUpdate), now, force))
+    assumeValid {
+      val appUpdate = preprocess(Json.parse(body).as[raml.AppUpdate])
+      withValid(appUpdate.copy(id = Some(appId.toString))) { appUpdate =>
+        val plan = result(groupManager.updateApp(appId, updateOrCreate(appId, _, appUpdate), now, force))
 
-      val response = plan.original.app(appId)
-        .map(_ => Response.ok())
-        .getOrElse(Response.created(new URI(appId.toString)))
-      plan.target.app(appId).foreach { appDef =>
-        maybePostEvent(req, appDef)
+        val response = plan.original.app(appId)
+          .map(_ => Response.ok())
+          .getOrElse(Response.created(new URI(appId.toString)))
+        plan.target.app(appId).foreach { appDef =>
+          maybePostEvent(req, appDef)
+        }
+        deploymentResult(plan, response)
       }
-      deploymentResult(plan, response)
     }
   }
 
@@ -185,18 +182,21 @@ class AppsResource @Inject() (
     @DefaultValue("false")@QueryParam("force") force: Boolean,
     body: Array[Byte],
     @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
-    val appUpdates = Json.parse(body).as[Seq[raml.AppUpdate]].map(upd => withCanonizedIds(preprocess(upd)))
-    withValid(appUpdates) { updates =>
-      val version = clock.now()
 
-      def updateGroup(root: Group): Group = updates.foldLeft(root) { (group, update) =>
-        update.id.map(PathId(_)) match {
-          case Some(id) => group.updateApp(id, updateOrCreate(id, _, update), version)
-          case None => group
+    assumeValid {
+      val appUpdates = Json.parse(body).as[Seq[raml.AppUpdate]].map(upd => withCanonizedIds(preprocess(upd)))
+      withValid(appUpdates) { updates =>
+        val version = clock.now()
+
+        def updateGroup(root: Group): Group = updates.foldLeft(root) { (group, update) =>
+          update.id.map(PathId(_)) match {
+            case Some(id) => group.updateApp(id, updateOrCreate(id, _, update), version)
+            case None => group
+          }
         }
-      }
 
-      deploymentResult(result(groupManager.update(PathId.empty, updateGroup, version, force)))
+        deploymentResult(result(groupManager.update(PathId.empty, updateGroup, version, force)))
+      }
     }
   }
 

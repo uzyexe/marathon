@@ -176,7 +176,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
     val response = appsResource.replace(updatedApp.id, updatedBody, false, auth.request)
 
     Then("It is successful")
-    response.getStatus should be(200)
+    assert(response.getStatus == 200, s"response=${response.getEntity.toString}")
     response.getMetadata.containsKey(RestResource.DeploymentHeader) should be(true)
   }
 
@@ -203,7 +203,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
   test("Create a new app without IP/CT when default virtual network is bar") {
     Given("An app and group")
     configArgs = Seq("--default_network_name", "bar")
-    resetAppsResource
+    resetAppsResource()
     implicit val normalizationConfig = AppNormalization.Config(Some("bar"))
 
     val app = App(
@@ -234,7 +234,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
   test("Create a new app with IP/CT when default virtual network is bar, Alice did not specify network name") {
     Given("An app and group")
     configArgs = Seq("--default_network_name", "bar")
-    resetAppsResource
+    resetAppsResource()
     implicit val normalizationConfig = AppNormalization.Config(Some("bar"))
 
     val app = App(
@@ -269,7 +269,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
   test("Create a new app with IP/CT when default virtual network is bar, but Alice specified foo") {
     Given("An app and group")
     configArgs = Seq("--default_network_name", "bar")
-    resetAppsResource
+    resetAppsResource()
     implicit val normalizationConfig = AppNormalization.Config(Some("bar"))
 
     val app = App(
@@ -348,7 +348,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
       id = "/app",
       cmd = Some("cmd"),
       container = Some(raml.Container(`type` = EngineType.Docker, docker = Some(container))),
-      portDefinitions = Seq.empty
+      portDefinitions = None
     )
 
     val appDef = normalizeAndConvert(app)
@@ -443,31 +443,14 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
         ))
       ))
     )
-    val (body, plan) = prepareApp(app)
-
-    When("The create request is made")
-    clock += 5.seconds
-    val response = appsResource.create(body, force = false, auth.request)
-
-    Then("It is successful")
-    response.getStatus should be(201)
-    response.getMetadata.containsKey(RestResource.DeploymentHeader) should be(true)
-
-    And("the JSON is as expected, including a newly generated version")
-    import mesosphere.marathon.api.v2.json.Formats._
-    val expected = AppInfo(
-      normalizeAndConvert(app).copy(versionInfo = VersionInfo.OnlyVersion(clock.now())),
-      maybeTasks = Some(immutable.Seq.empty),
-      maybeCounts = Some(TaskCounts.zero),
-      maybeDeployments = Some(immutable.Seq(Identifiable(plan.id)))
-    )
-    JsonTestHelper.assertThatJsonString(response.getEntity.asInstanceOf[String]).correspondsToJsonOf(expected)
+    // mixing ipAddress with Docker containers is not allowed by validation; API migration fails it too
+    a[SerializationFailedException] shouldBe thrownBy(prepareApp(app))
   }
 
   test("Create a new app (that uses secrets) successfully") {
     Given("The secrets feature is enabled")
     configArgs = Seq("--enable_features", "secrets")
-    resetAppsResource
+    resetAppsResource()
 
     And("An app with a secret and an envvar secret-ref")
     val app = App(id = "/app", cmd = Some("cmd"),
@@ -561,7 +544,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
     {
       val app = App(id = "/app", cmd = Some("cmd"),
         instances = Some(-1))
-      val (body, plan) = prepareApp(app)
+      val (body, _) = prepareApp(app)
 
       val response = appsResource.create(body, false, auth.request)
       response.getStatus should be(422)
@@ -573,7 +556,7 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
     val app = App(
       id = "/app",
       cmd = Some("cmd"),
-      portDefinitions = Seq(raml.PortDefinition(port = Some(1000)), raml.PortDefinition(port = Some(1001)))
+      portDefinitions = Some(Seq(raml.PortDefinition(port = Some(1000)), raml.PortDefinition(port = Some(1001))))
     )
     val (_, plan) = prepareApp(app)
     val appJson = Json.toJson(app).as[JsObject]
@@ -668,7 +651,10 @@ class AppsResourceTest extends MarathonSpec with MarathonActorSupport with Match
         |}""".stripMargin.getBytes("UTF-8")
 
     Then("A validation exception is thrown")
-    intercept[ValidationFailedException] { appsResource.replace(app.id, body, force = false, auth.request) }
+    val response = appsResource.replace(app.id, body, force = false, auth.request)
+    response.getStatus should be(422)
+    response.getEntity.toString should include("/container/docker")
+    response.getEntity.toString should include("not defined")
   }
 
   def createAppWithVolumes(`type`: String, volumes: String): Response = {

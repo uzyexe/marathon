@@ -206,7 +206,7 @@ class AppDeployIntegrationTest
     Given("a new app")
     val app = appProxy(testBasePath / "http-app", "v1", instances = 1, withHealth = false).
       copy(
-        portDefinitions = PortDefinitions(31000),
+        portDefinitions = Some(PortDefinitions(31000)),
         requirePorts = Some(true),
         healthChecks = Seq(ramlHealthCheck.copy(port = Some(31000)))
       )
@@ -560,7 +560,7 @@ class AppDeployIntegrationTest
     Given("a new app with constraints that cannot be fulfilled")
     val c = Seq("nonExistent", "CLUSTER", "na")
     val appId = testBasePath / "app"
-    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = Nil)
+    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = None)
 
     val create = marathon.createAppV2(app)
     create.code should be (201) // Created
@@ -585,7 +585,7 @@ class AppDeployIntegrationTest
     Given("a new app with constraints that cannot be fulfilled")
     val c = Seq("nonExistent", "CLUSTER", "na")
     val appId = testBasePath / "app"
-    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = Nil)
+    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = None)
 
     val create = marathon.createAppV2(app)
     create.code should be (201) // Created

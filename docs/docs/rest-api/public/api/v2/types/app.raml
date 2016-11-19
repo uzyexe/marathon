@@ -32,7 +32,9 @@ types:
           When a task using persistent local volumes cannot be restarted on the
           agent it's been pinned to, Marathon will try to launch this task on
           another node after this timeout. Defaults to 3600 (one hour).",
-      taskLostBehavior?: strings.TaskLostBehavior
+      taskLostBehavior:
+        type: strings.TaskLostBehavior
+        default: WAIT_FOREVER
   UpgradeStrategy:
     type: object
     description: |
@@ -68,6 +70,7 @@ types:
       id: strings.PathId
       acceptedResourceRoles?:
         type: array
+        (pragma.forceOptional):
         items: string
         uniqueItems: true
         example: [public-facing]
@@ -208,6 +211,7 @@ types:
         items: network.Network
       ports?:
         type: array
+        (pragma.forceOptional):
         items: number.EphemeralPort
         description: |
           An array of required port resources on the agent host.
@@ -218,6 +222,7 @@ types:
           balancing definitions.
       portDefinitions?:
         type: network.PortDefinition[]
+        (pragma.forceOptional):
         description: |
           An array of required port resources on the agent host.
           The number of items in the array determines how many dynamic ports are

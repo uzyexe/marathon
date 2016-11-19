@@ -1,4 +1,5 @@
-package mesosphere.marathon.api.validation
+package mesosphere.marathon
+package api.validation
 
 import mesosphere.marathon.core.health.{ HealthCheck, MarathonHttpHealthCheck, MesosCommandHealthCheck, MesosHttpHealthCheck }
 import mesosphere.marathon.core.plugin.PluginManager
@@ -54,7 +55,8 @@ class AppDefinitionMesosHealthCheckValidationTest extends MarathonSpec with Matc
         id = PathId("/test"),
         cmd = Some("sleep 1000"),
         instances = 1,
-        healthChecks = healthChecks
+        healthChecks = healthChecks,
+        portDefinitions = Seq(PortDefinition(0))
       )
   }
 }

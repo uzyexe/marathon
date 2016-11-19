@@ -30,7 +30,7 @@ class MarathonExceptionMapperTest extends MarathonSpec with GivenWhenThen with M
     val details = (entity \ "details").as[Seq[JsObject]]
     details should have size 1
     val firstDetail = details.head
-    (firstDetail \ "path").as[String] should be("/id")
+    (firstDetail \ "path").as[String] should be("")
     val errors = (firstDetail \ "errors").as[Seq[String]]
     errors should have size 1
     errors.head should be("error.expected.jsstring")

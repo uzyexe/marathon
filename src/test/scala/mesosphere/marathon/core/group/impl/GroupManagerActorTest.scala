@@ -182,7 +182,7 @@ class GroupManagerActorTest extends Mockito with Matchers with MarathonSpec {
     val group = Group(PathId.empty, Map(app1.id -> app1))
     val update = manager(90 to 900).assignDynamicServicePorts(Group.empty, group)
     update.transitiveApps.filter(_.hasDynamicServicePorts) should be (empty)
-    update.transitiveApps.flatMap(_.portNumbers) should equal (Set(80, 81))
+    update.transitiveApps.flatMap(_.servicePorts) should equal (Set(80, 81))
   }
 
   test("Already taken ports will not be used") {

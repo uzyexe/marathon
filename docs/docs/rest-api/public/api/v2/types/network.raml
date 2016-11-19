@@ -121,9 +121,8 @@ types:
           unique service port will be assigned by Marathon.
       labels?: label.KVLabels
       name?:
-        type: string
+        type: strings.Name
         description: |
           Name of the service hosted on this port.
           If provided, it must be unique over all port definitions.
-        pattern: ^[a-z][a-z0-90]*$
       protocol?: strings.NetworkProtocol

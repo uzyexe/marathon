@@ -27,19 +27,19 @@ class DeploymentFormatsTest extends MarathonSpec {
       |}
       |""".stripMargin
     val update = Json.parse(json).as[GroupUpdate]
-    update.id should be(Some("a".toPath))
+    update.id should be(Some("a"))
     update.apps should be ('defined)
     update.apps.get should have size 1
-    update.apps.get.head.id should be("b".toPath)
+    update.apps.get.head.id should be("b")
     update.groups should be ('defined)
     update.groups.get should have size 1
-    update.groups.get.head.id should be(Some("c".toPath))
+    update.groups.get.head.id should be(Some("c"))
     update.dependencies should be('defined)
-    update.dependencies.get.head should be("d".toPath)
+    update.dependencies.get.head should be("d")
     update.scaleBy should be('defined)
     update.scaleBy.get should be(23.0 +- 0.01)
     update.version should be('defined)
-    update.version.get should be(Timestamp("2015-06-03T13:00:52.928Z"))
+    update.version.get should be(Timestamp("2015-06-03T13:00:52.928Z").toOffsetDateTime)
   }
 
   test("Can write/read GroupUpdate") {

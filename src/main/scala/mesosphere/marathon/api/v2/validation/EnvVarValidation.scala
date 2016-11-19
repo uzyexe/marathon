@@ -10,7 +10,7 @@ trait EnvVarValidation {
   import Validation._
   import SecretValidation._
 
-  val EnvVarNamePattern = """^[A-Z_][A-Z0-9_]*$""".r
+  val EnvVarNamePattern = """^[a-zA-Z_][a-zA-Z0-9_]*$""".r
 
   val validEnvVarName: Validator[String] = validator[String] { name =>
     name should matchRegexWithFailureMessage(
@@ -30,7 +30,10 @@ trait EnvVarValidation {
         case _ => false
       } == 0
     else true
-  } and every(secretRefValidator(secrets))
+  } and every(secretRefValidator(secrets)) and isTrue("duplicate keys (case insensitive) are not allowed"){ (env: Map[String, EnvVarValueOrSecret]) =>
+    val keys: Seq[String] = env.keySet.map(_.toUpperCase)(collection.breakOut)
+    keys.distinct.size == keys.size
+  }
 }
 
 object EnvVarValidation extends EnvVarValidation

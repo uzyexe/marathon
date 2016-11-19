@@ -27,16 +27,9 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
 
   implicit val residencyRamlReader = Reads[AppResidency, Residency] { residency =>
     import ResidencyDefinition.TaskLostBehavior._
-    // TODO(jdef) this belongs in validation; should never happen..
-    def invalidTaskLostBehavior: ResidencyDefinition.TaskLostBehavior = {
-      val allowedTaskLostBehaviorString =
-        ResidencyDefinition.TaskLostBehavior.values().toSeq.map(_.getDescriptorForType.getName).mkString(", ")
-      throw SerializationFailedException(
-        s"'$residency' is not a valid taskLostBehavior. Allowed values: $allowedTaskLostBehaviorString")
-    }
     Residency(
       relaunchEscalationTimeoutSeconds = residency.relaunchEscalationTimeoutSeconds.toLong,
-      taskLostBehavior = residency.taskLostBehavior.fold(invalidTaskLostBehavior) {
+      taskLostBehavior = residency.taskLostBehavior match {
         case TaskLostBehavior.RelaunchAfterTimeout => RELAUNCH_AFTER_TIMEOUT
         case TaskLostBehavior.WaitForever => WAIT_FOREVER
       }
@@ -44,12 +37,13 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
   }
 
   implicit val fetchUriReader = Reads[Artifact, FetchUri] { artifact =>
+    import FetchUri.defaultInstance
     FetchUri(
       uri = artifact.uri,
-      extract = artifact.extract.getOrElse(FetchUri.defaultInstance.extract),
-      executable = artifact.executable.getOrElse(FetchUri.defaultInstance.executable),
-      cache = artifact.cache.getOrElse(FetchUri.defaultInstance.cache),
-      outputFile = artifact.destPath.orElse(FetchUri.defaultInstance.outputFile)
+      extract = artifact.extract.getOrElse(defaultInstance.extract),
+      executable = artifact.executable.getOrElse(defaultInstance.executable),
+      cache = artifact.cache.getOrElse(defaultInstance.cache),
+      outputFile = artifact.destPath.orElse(defaultInstance.outputFile)
     )
   }
 
@@ -316,7 +310,7 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
       constraints = app.constraints.map(Raml.fromRaml(_))(collection.breakOut),
       fetch = app.fetch.map(Raml.fromRaml(_)),
       storeUrls = app.storeUrls,
-      portDefinitions = app.portDefinitions.map(Raml.fromRaml(_)),
+      portDefinitions = app.portDefinitions.map(_.map(Raml.fromRaml(_))).getOrElse(Nil),
       requirePorts = app.requirePorts.getOrElse(AppDefinition.DefaultRequirePorts),
       backoffStrategy = backoffStrategy,
       container = app.container.map(Raml.fromRaml(_)),
@@ -326,7 +320,7 @@ trait AppConversion extends EnvVarConversion with NetworkConversion with SecretC
       dependencies = app.dependencies.map(PathId(_))(collection.breakOut),
       upgradeStrategy = selectedStrategy.upgradeStrategy,
       labels = app.labels,
-      acceptedResourceRoles = app.acceptedResourceRoles,
+      acceptedResourceRoles = app.acceptedResourceRoles.getOrElse(AppDefinition.DefaultAcceptedResourceRoles),
       networks = app.networks.map(Raml.fromRaml(_)),
       versionInfo = versionInfo,
       residency = selectedStrategy.residency,

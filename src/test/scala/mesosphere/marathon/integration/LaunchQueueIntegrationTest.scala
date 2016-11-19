@@ -24,7 +24,7 @@ class LaunchQueueIntegrationTest extends IntegrationFunSuite with SingleMarathon
     Given("a new app with constraints that cannot be fulfilled")
     val c = Seq("nonExistent", "CLUSTER", "na")
     val appId = testBasePath / "app"
-    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = Nil)
+    val app = App(appId.toString, constraints = Seq(c), cmd = Some("na"), instances = Some(5), portDefinitions = None)
     val create = marathon.createAppV2(app)
     create.code should be (201) // Created
 

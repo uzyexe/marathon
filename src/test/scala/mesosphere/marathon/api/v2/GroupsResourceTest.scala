@@ -16,7 +16,6 @@ import org.scalatest.{ GivenWhenThen, Matchers }
 import play.api.libs.json.{ JsObject, Json }
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
 
 class GroupsResourceTest extends MarathonSpec with Matchers with Mockito with GivenWhenThen {
   test("dry run update") {
@@ -261,12 +260,10 @@ class GroupsResourceTest extends MarathonSpec with Matchers with Mockito with Gi
 
   before {
     auth = new TestAuthFixture
-    config = mock[MarathonConf]
+    config = AllConf.withTestConfig("--zk_timeout", "1000")
     groupManager = mock[GroupManager]
     groupInfo = mock[GroupInfoService]
     groupsResource = new GroupsResource(groupManager, groupInfo, config)(auth.auth, auth.auth)
-
-    config.zkTimeoutDuration returns 1.second
   }
 
   private[this] def useRealGroupManager(): Unit = {

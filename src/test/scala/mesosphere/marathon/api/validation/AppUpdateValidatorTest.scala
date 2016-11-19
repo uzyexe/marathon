@@ -50,6 +50,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
           |  "backoffFactor": 1.15,
           |  "maxLaunchDelaySeconds": 3600,
           |  "container": {
+          |    "type": "DOCKER",
           |    "docker": {
           |      "image": "alpine",
           |      "forcePullImage": false,
@@ -76,7 +77,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
 
       val appUpdate = AppNormalization.apply(AppNormalization.forDeprecatedFields(Json.parse(
         """
-          | {
+          |{
           |	"id": "/sleepy-moby",
           |	"cmd": "sleep 1000",
           |	"instances": 1,
@@ -88,6 +89,7 @@ class AppUpdateValidatorTest extends UnitTest with Matchers {
           |	"backoffFactor": 1.15,
           |	"maxLaunchDelaySeconds": 3600,
           |	"container": {
+          |   "type": "DOCKER",
           |		"docker": {
           |			"image": "alpine",
           |			"forcePullImage": false,

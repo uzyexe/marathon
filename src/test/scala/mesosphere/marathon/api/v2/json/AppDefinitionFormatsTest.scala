@@ -1,6 +1,8 @@
 package mesosphere.marathon
 package api.v2.json
 
+import akka.Done
+import mesosphere.Unstable
 import mesosphere.marathon.Protos.Constraint
 import mesosphere.marathon.api.v2.AppNormalization
 import mesosphere.marathon.api.v2.Validation
@@ -30,7 +32,7 @@ class AppDefinitionFormatsTest
 
   object Fixture {
     val a1 = AppDefinition(
-      id = "app1".toPath,
+      id = "app1".toRootPath,
       cmd = Some("sleep 10"),
       versionInfo = VersionInfo.OnlyVersion(Timestamp(1))
     )
@@ -47,11 +49,20 @@ class AppDefinitionFormatsTest
   def normalizeAndConvert(app: raml.App): AppDefinition =
     // this is roughly the equivalent of how the original Formats behaved
     Raml.fromRaml(
-      AppNormalization.apply(
-        Validation.validateOrThrow(
-          AppNormalization.forDeprecatedFields(app))(AppValidation.validateOldAppAPI),
-        AppNormalization.Config(None)
-      ))
+      Validation.validateOrThrow(
+        AppNormalization.apply(
+          Validation.validateOrThrow(
+            AppNormalization.forDeprecatedFields(app))(AppValidation.validateOldAppAPI),
+          AppNormalization.Config(None)
+        ))(AppValidation.validateCanonicalAppAPI(Set.empty)))
+
+  def assumeValid(f: => Done): Done = scala.util.Try { f }.recover {
+    // handle RAML validation errors
+    case vfe: ValidationFailedException =>
+      assert(false, vfe.failure.violations)
+      Done
+    case th => throw th
+  }.get
 
   test("ToJson") {
     import AppDefinition._
@@ -59,7 +70,7 @@ class AppDefinitionFormatsTest
 
     val r1 = Json.toJson(a1)
     // check supplied values
-    (r1 \ "id").get should equal (JsString("app1"))
+    (r1 \ "id").get should equal (JsString("/app1"))
     (r1 \ "cmd").get should equal (JsString("sleep 10"))
     (r1 \ "version").get should equal (JsString("1970-01-01T00:00:00.001Z"))
     (r1 \ "versionInfo").asOpt[JsObject] should equal(None)
@@ -129,7 +140,7 @@ class AppDefinitionFormatsTest
     r1.constraints should equal (DefaultConstraints)
     r1.fetch should equal (DefaultFetch)
     r1.storeUrls should equal (DefaultStoreUrls)
-    r1.portDefinitions should equal (DefaultPortDefinitions)
+    r1.portDefinitions should equal (Seq(PortDefinition(port = 0)))
     r1.requirePorts should equal (DefaultRequirePorts)
     r1.backoffStrategy.backoff should equal (DefaultBackoff)
     r1.backoffStrategy.factor should equal (DefaultBackoffFactor)
@@ -147,6 +158,7 @@ class AppDefinitionFormatsTest
     val app = Json.parse(
       """{
         |  "id": "test",
+        |  "cmd": "foo",
         |  "version": "1970-01-01T00:00:00.002Z",
         |  "versionInfo": {
         |     "lastScalingAt": "1970-01-01T00:00:00.002Z",
@@ -154,22 +166,25 @@ class AppDefinitionFormatsTest
         |  }
         |}""".stripMargin).as[raml.App]
 
-    val appDef = normalizeAndConvert(app)
-    appDef.versionInfo shouldBe a[OnlyVersion]
+    assumeValid {
+      val appDef = normalizeAndConvert(app)
+      appDef.versionInfo shouldBe a[OnlyVersion]
+      Done
+    }
   }
 
   test("FromJSON should fail for empty id") {
     val json = Json.parse(""" { "id": "" }""")
-    a[JsResultException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
+    a[ValidationFailedException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
   }
 
   test("FromJSON should fail when using / as an id") {
     val json = Json.parse(""" { "id": "/" }""")
-    a[JsResultException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
+    a[ValidationFailedException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
   }
 
   test("FromJSON should not fail when 'cpus' is greater than 0") {
-    val json = Json.parse(""" { "id": "test", "cpus": 0.0001 }""")
+    val json = Json.parse(""" { "id": "test", "cmd": "foo", "cpus": 0.0001 }""")
     noException should be thrownBy {
       normalizeAndConvert(json.as[raml.App])
     }
@@ -188,39 +203,58 @@ class AppDefinitionFormatsTest
   }
 
   test("""FromJSON should parse "acceptedResourceRoles": ["production", "*"] """) {
-    val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": ["production", "*"] }""")
+    val json = Json.parse(""" { "id": "test", "cmd": "foo", "acceptedResourceRoles": ["production", "*"] }""")
     val appDef = normalizeAndConvert(json.as[raml.App])
     appDef.acceptedResourceRoles should equal(Set("production", ResourceRole.Unreserved))
   }
 
   test("""FromJSON should parse "acceptedResourceRoles": ["*"] """) {
-    val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": ["*"] }""")
+    val json = Json.parse(""" { "id": "test", "cmd": "foo", "acceptedResourceRoles": ["*"] }""")
     val appDef = normalizeAndConvert(json.as[raml.App])
     appDef.acceptedResourceRoles should equal(Set(ResourceRole.Unreserved))
   }
 
   test("FromJSON should fail when 'acceptedResourceRoles' is defined but empty") {
-    val json = Json.parse(""" { "id": "test", "acceptedResourceRoles": [] }""")
-    a[JsResultException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
+    val json = Json.parse(""" { "id": "test", "cmd": "foo", "acceptedResourceRoles": [] }""")
+    a[ValidationFailedException] shouldBe thrownBy { normalizeAndConvert(json.as[raml.App]) }
   }
 
   test("FromJSON should read the default upgrade strategy") {
-    val json = Json.parse(""" { "id": "test" }""")
-    val appDef = normalizeAndConvert(json.as[raml.App])
-    appDef.upgradeStrategy should be(UpgradeStrategy.empty)
+    assumeValid {
+      val json = Json.parse(""" { "id": "test", "cmd": "foo" }""")
+      val appDef = normalizeAndConvert(json.as[raml.App])
+      appDef.upgradeStrategy should be(UpgradeStrategy.empty)
+      Done
+    }
   }
 
-  test("FromJSON should read the residency upgrade strategy") {
-    val json = Json.parse(""" { "id": "test", "residency": {}}""")
-    val appDef = normalizeAndConvert(json.as[raml.App])
-    appDef.upgradeStrategy should be(UpgradeStrategy.forResidentTasks)
+  test("FromJSON should have a default residency upgrade strategy") {
+    assumeValid {
+      val json = Json.parse(
+        """{
+          |  "id": "test",
+          |  "container": {
+          |    "type": "DOCKER",
+          |    "docker": { "image": "busybox" },
+          |    "volumes": [
+          |      { "containerPath": "b", "persistent": { "size": 1 } }
+          |    ]
+          |  },
+          |  "residency": {}
+          |}""".stripMargin)
+      val appDef = normalizeAndConvert(json.as[raml.App])
+      appDef.upgradeStrategy should be(UpgradeStrategy.forResidentTasks)
+      Done
+    }
   }
 
   test("FromJSON should read the default residency automatically residency ") {
-    val json = Json.parse(
-      """
+    assumeValid {
+      val json = Json.parse(
+        """
         |{
         |  "id": "resident",
+        |  "cmd": "foo",
         |  "container": {
         |    "type": "MESOS",
         |    "volumes": [{
@@ -230,22 +264,38 @@ class AppDefinitionFormatsTest
         |    }]
         |  }
         |}
-      """.stripMargin)
-    val appDef = normalizeAndConvert(json.as[raml.App])
-    appDef.residency should be(Some(Residency.defaultResidency))
+      """.
+        stripMargin)
+
+      val appDef = normalizeAndConvert(json.as[raml.App])
+      appDef.residency should be(Some(Residency.defaultResidency))
+      Done
+    }
   }
 
   test("""FromJSON should parse "residency" """) {
-    val appDef = normalizeAndConvert(Json.parse(
-      """{
-        |  "id": "test",
-        |  "residency": {
-        |     "relaunchEscalationTimeoutSeconds": 300,
-        |     "taskLostBehavior": "RELAUNCH_AFTER_TIMEOUT"
-        |  }
-        |}""".stripMargin).as[raml.App])
+    assumeValid {
+      val appDef = normalizeAndConvert(Json.parse(
+        """{
+          |  "id": "test",
+          |  "cmd": "foo",
+          |  "container": {
+          |    "type": "MESOS",
+          |    "volumes": [{
+          |      "containerPath": "var",
+          |      "persistent": { "size": 10 },
+          |      "mode": "RW"
+          |    }]
+          |  },
+          |  "residency": {
+          |    "relaunchEscalationTimeoutSeconds": 300,
+          |    "taskLostBehavior": "RELAUNCH_AFTER_TIMEOUT"
+          |  }
+          |}""".stripMargin).as[raml.App])
 
-    appDef.residency should equal(Some(Residency(300, Protos.ResidencyDefinition.TaskLostBehavior.RELAUNCH_AFTER_TIMEOUT)))
+      appDef.residency should equal(Some(Residency(300, Protos.ResidencyDefinition.TaskLostBehavior.RELAUNCH_AFTER_TIMEOUT)))
+      Done
+    }
   }
 
   test("ToJson should serialize residency") {
@@ -257,19 +307,29 @@ class AppDefinitionFormatsTest
   }
 
   test("AppDefinition JSON includes readinessChecks") {
-    val app = AppDefinition(id = PathId("/test"), cmd = Some("sleep 123"), readinessChecks = Seq(
-      ReadinessCheckTestHelper.alternativeHttps
-    ))
+    val app = AppDefinition(
+      id = PathId("/test"),
+      cmd = Some("sleep 123"), readinessChecks = Seq(
+        ReadinessCheckTestHelper.alternativeHttps
+      ),
+      portDefinitions = Seq(
+        state.PortDefinition(0, name = Some(ReadinessCheckTestHelper.alternativeHttps.portName))
+      )
+    )
     val appJson = Json.toJson(app)
     val rereadApp = appJson.as[raml.App]
     rereadApp.readinessChecks should have size 1
-    normalizeAndConvert(rereadApp) should equal(app)
+    assumeValid {
+      normalizeAndConvert(rereadApp) should equal(app)
+      Done
+    }
   }
 
   test("FromJSON should parse ipAddress.networkName") {
     val appDef = normalizeAndConvert(Json.parse(
       """{
         |  "id": "test",
+        |  "cmd": "foo",
         |  "ipAddress": {
         |    "networkName": "foo"
         |  }
@@ -282,6 +342,7 @@ class AppDefinitionFormatsTest
     val appDef = normalizeAndConvert(Json.parse(
       """{
         |  "id": "test",
+        |  "cmd": "foo",
         |  "ipAddress": {
         |    "networkName": "foo"
         |  },
@@ -295,23 +356,26 @@ class AppDefinitionFormatsTest
   }
 
   test("FromJSON should parse ipAddress.networkName with DOCKER container w/o port mappings") {
-    val appDef = normalizeAndConvert(Json.parse(
-      """{
-        |  "id": "test",
-        |  "ipAddress": {
-        |    "networkName": "foo"
-        |  },
-        |  "container": {
-        |    "type": "DOCKER",
-        |    "docker": {
-        |      "image": "busybox",
-        |      "network": "USER"
-        |    }
-        |  }
-        |}""".stripMargin).as[raml.App])
+    assumeValid {
+      val appDef = normalizeAndConvert(Json.parse(
+        """{
+          |  "id": "test",
+          |  "ipAddress": {
+          |    "networkName": "foo"
+          |  },
+          |  "container": {
+          |    "type": "DOCKER",
+          |    "docker": {
+          |      "image": "busybox",
+          |      "network": "USER"
+          |    }
+          |  }
+          |}""".stripMargin).as[raml.App])
 
-    appDef.networks should be(Seq(ContainerNetwork(name = "foo")))
-    appDef.container should be(Some(Container.Docker(image = "busybox")))
+      appDef.networks should be(Seq(ContainerNetwork(name = "foo")))
+      appDef.container should be(Some(Container.Docker(image = "busybox")))
+      Done
+    }
   }
 
   test("FromJSON should parse ipAddress.networkName with DOCKER container w/ port mappings") {
@@ -439,5 +503,23 @@ class AppDefinitionFormatsTest
     (json \ "secrets" \ "secret1" \ "source").as[String] should equal("/foo")
     (json \ "secrets" \ "secret2" \ "source").as[String] should equal("/foo")
     (json \ "secrets" \ "secret3" \ "source").as[String] should equal("/foo2")
+  }
+
+  test("app with readinessCheck passes validation", Unstable) {
+    val app = AppDefinition(
+      id = "test".toRootPath,
+      cmd = Some("sleep 1234"),
+      readinessChecks = Seq(
+        ReadinessCheckTestHelper.alternativeHttps
+      ),
+      portDefinitions = Seq(state.PortDefinition(0, name = Some(ReadinessCheckTestHelper.alternativeHttps.portName)))
+    )
+
+    val jsonApp = Json.toJson(app)
+    assumeValid {
+      val ramlApp = jsonApp.as[raml.App]
+      normalizeAndConvert(ramlApp)
+      Done
+    }
   }
 }

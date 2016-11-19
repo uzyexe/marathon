@@ -288,7 +288,8 @@ object MarathonTestHelper {
   def makeBasicApp() = AppDefinition(
     id = "/test-app".toPath,
     resources = Resources(cpus = 1.0, mem = 64.0, disk = 1.0),
-    executor = "//cmd"
+    executor = "//cmd",
+    portDefinitions = Seq(PortDefinition(0))
   )
 
   lazy val appSchema = {
@@ -306,6 +307,7 @@ object MarathonTestHelper {
     validateJsonSchemaForString(appStr, valid)
   }
 
+  // TODO(jdef) re-think validating against this schema; we should be validating against RAML instead
   def validateJsonSchemaForString(appStr: String, valid: Boolean): Unit = {
     val appJson = JsonLoader.fromString(appStr)
     val validationResult: ProcessingReport = appSchema.validate(appJson)

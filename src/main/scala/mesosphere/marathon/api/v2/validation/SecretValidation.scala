@@ -1,6 +1,7 @@
 package mesosphere.marathon
 package api.v2.validation
 
+import com.wix.accord.Validator
 import com.wix.accord.dsl._
 import mesosphere.marathon.api.v2.Validation
 import mesosphere.marathon.raml.{ EnvVarSecretRef, EnvVarValueOrSecret, SecretDef }
@@ -19,6 +20,11 @@ trait SecretValidation {
       case ref: EnvVarSecretRef => secrets.contains(ref.secret)
       case _ => true
     }
+  }
+
+  val secretEntryValidator: Validator[(String, SecretDef)] = validator[(String, SecretDef)] { t =>
+    t._1 as "" is notEmpty
+    t._2.source as "source" is notEmpty
   }
 
   val secretValidator = validator[Map[String, SecretDef]] { s =>

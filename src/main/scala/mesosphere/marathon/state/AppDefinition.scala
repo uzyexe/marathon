@@ -345,6 +345,10 @@ case class AppDefinition(
   }
 
   val usesNonHostNetworking = networks.exists(_ != HostNetwork)
+  val usesContainerNetworking = networks.exists {
+    case _: ContainerNetwork => true
+    case _ => false
+  }
 
   def portAssignments(task: Task): Seq[PortAssignment] = {
     @SuppressWarnings(Array("OptionGet", "TraversableHead"))
@@ -362,7 +366,7 @@ case class AppDefinition(
             }
 
           val effectivePort =
-            if (usesNonHostNetworking || portMapping.hostPort.isEmpty) {
+            if (usesContainerNetworking || portMapping.hostPort.isEmpty) {
               portMapping.containerPort
             } else {
               hostPort.get
@@ -442,7 +446,7 @@ object AppDefinition extends GeneralPurposeCombinators {
 
   val DefaultStoreUrls = Seq.empty[String]
 
-  val DefaultPortDefinitions: Seq[PortDefinition] = Seq(RandomPortDefinition)
+  val DefaultPortDefinitions: Seq[PortDefinition] = Nil
 
   val DefaultRequirePorts: Boolean = false
 

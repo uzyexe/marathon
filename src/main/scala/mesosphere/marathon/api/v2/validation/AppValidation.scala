@@ -99,16 +99,16 @@ trait AppValidation {
     val validGeneralContainer: Validator[Container] = validator[Container] { container =>
       container.portMappings is portMappingsValidator
       container.volumes is every(validVolume(container, enabledFeatures))
-    }
+    } and valid(conditional[Container](_.`type` == EngineType.Docker)(dockerDockerContainerValidator))
 
     val validEngineWithImage = new Validator[Container] {
       override def apply(container: Container): Result = {
         (container.docker, container.appc, container.`type`) match {
-          case (Some(docker), None, EngineType.Docker) => validate(container)(dockerDockerContainerValidator)
-          case (Some(docker), None, EngineType.Mesos) => validate(container)(mesosDockerContainerValidator)
-          case (None, Some(appc), EngineType.Mesos) => validate(container)(mesosAppcContainerValidator)
+          case (_, None, EngineType.Docker) => Success // handled by validGeneralContainer
+          case (Some(_), None, EngineType.Mesos) => validate(container)(mesosDockerContainerValidator)
+          case (None, Some(_), EngineType.Mesos) => validate(container)(mesosAppcContainerValidator)
           case (None, None, EngineType.Mesos) => validate(container)(mesosContainerValidator)
-          case _ => Failure(Set(RuleViolation(container, "illegal combination of containerizer and image type", None)))
+          case _ => Failure(Set(RuleViolation(container, "mesos containers should specify, at most, a single image type", None)))
         }
       }
     }
@@ -204,7 +204,7 @@ trait AppValidation {
 
   def readinessCheckValidator(app: App): Validator[ReadinessCheck] = {
     // we expect that the deprecated API has already been translated into canonical form
-    val portNames = (app.portDefinitions.flatMap(_.name) ++
+    val portNames = (app.portDefinitions.map(_.flatMap(_.name)).getOrElse(Nil) ++
       app.container.fold[Seq[String]](Seq.empty)(_.portMappings.flatMap(_.name))).to[Set]
     def portNameExists = isTrue[String]{ name: String => s"No port definition reference for portName $name" } { name =>
       portNames.contains(name)
@@ -243,7 +243,8 @@ trait AppValidation {
         !(update.container.exists(c => c.`type` == EngineType.Docker) && ipAddress.discovery.nonEmpty)
       })
     update.ports is optional(every(validPortNumber))
-    update.uris is optional(every(ArtifactValidation.uriValidator))
+    update.uris is optional(every(ArtifactValidation.uriValidator) and isTrue(
+      "may not be set in conjunction with fetch"){ (uris: Seq[String]) => !(uris.nonEmpty && update.fetch.fold(false)(_.nonEmpty)) })
   } and isTrue("ports must be unique") { (update: AppUpdate) =>
     val withoutRandom = update.ports.fold(Seq.empty[Int])(_.filterNot(_ == AppDefinition.RandomPortValue))
     withoutRandom.distinct.size == withoutRandom.size
@@ -269,19 +270,15 @@ trait AppValidation {
     update.gpus should optional(be >= 0)
     update.dependencies.map(_.map(PathId(_))) as "dependencies" is optional(every(valid))
     update.env is optional(envValidator(update.secrets.getOrElse(Map.empty), enabledFeatures))
-    update.secrets is optional(isTrue("secrets feature is required for using secrets with an application"){
-      (secrets: Map[String, SecretDef]) =>
-        if (secrets.nonEmpty)
-          validateOrThrow(secrets)(secretValidator and featureEnabled(enabledFeatures, Features.SECRETS))
-        true
-    })
+    update.secrets is optional(conditional[Map[String, SecretDef]](_.nonEmpty)(featureEnabled(enabledFeatures, Features.SECRETS)))
+    update.secrets is optional(implied[Map[String, SecretDef]](enabledFeatures.contains(Features.SECRETS))(every(secretEntryValidator)))
     update.storeUrls is optional(every(urlCanBeResolvedValidator))
     update.fetch is optional(every(valid))
     update.upgradeStrategy is optional(valid)
     update.residency is optional(valid)
     update.portDefinitions is optional(portDefinitionsValidator)
     update.container is optional(validContainer(enabledFeatures))
-    update.acceptedResourceRoles is optional(ResourceRole.validAcceptedResourceRoles(update.residency.isDefined) and notEmpty)
+    update.acceptedResourceRoles is valid(optional(ResourceRole.validAcceptedResourceRoles(update.residency.isDefined) and notEmpty))
   } and isTrue("must not be root") { (update: AppUpdate) =>
     !update.id.fold(false)(PathId(_).isRoot)
   } and isTrue("must not be an empty string") { (update: AppUpdate) =>
@@ -307,21 +304,22 @@ trait AppValidation {
       "ipAddress/discovery is not allowed for Docker containers") { (ipAddress: IpAddress) =>
         !(app.container.exists(c => c.`type` == EngineType.Docker) && ipAddress.discovery.nonEmpty)
       })
-    app.ports is every(validPortNumber)
-    app.uris is every(ArtifactValidation.uriValidator)
+    app.ports is optional(every(validPortNumber))
+    app.uris is every(ArtifactValidation.uriValidator) and isTrue(
+      "may not be set in conjunction with fetch"){ (uris: Seq[String]) => !(uris.nonEmpty && app.fetch.nonEmpty) }
   } and isTrue("must not specify both container.docker.network and networks") { (app: App) =>
     !(app.container.exists(_.docker.exists(_.network.nonEmpty)) && app.networks.nonEmpty)
   } and isTrue("must not specify both networks and ipAddress") { (app: App) =>
     !(app.ipAddress.nonEmpty && app.networks.nonEmpty)
   } and isTrue("ports must be unique") { (app: App) =>
-    val withoutRandom = app.ports.filterNot(_ == AppDefinition.RandomPortValue)
+    val withoutRandom: Seq[Int] = app.ports.map(_.filterNot(_ == AppDefinition.RandomPortValue)).getOrElse(Nil)
     withoutRandom.distinct.size == withoutRandom.size
   } and isTrue("cannot specify both an IP address and port") { (app: App) =>
-    val appWithoutPorts = app.ports.isEmpty && app.portDefinitions.isEmpty
-    appWithoutPorts || app.ipAddress.isEmpty
+    def appWithoutPorts = !(app.ports.exists(_.nonEmpty) || app.portDefinitions.exists(_.nonEmpty))
+    app.ipAddress.isEmpty || appWithoutPorts
   } and isTrue("cannot specify both ports and port definitions") { (app: App) =>
-    val portDefinitionsIsEquivalentToPorts = app.portDefinitions.map(_.port) == app.ports.map(Some(_))
-    portDefinitionsIsEquivalentToPorts || app.ports.isEmpty || app.portDefinitions.isEmpty
+    def portDefinitionsIsEquivalentToPorts = app.portDefinitions.map(_.map(_.port)) == app.ports.map(_.map(Some(_)))
+    app.ports.isEmpty || app.portDefinitions.isEmpty || portDefinitionsIsEquivalentToPorts
   }
 
   def validateCanonicalAppAPI(enabledFeatures: Set[String]): Validator[App] = validator[App] { app =>
@@ -335,7 +333,7 @@ trait AppValidation {
   } and isTrue("portMappings are not allowed with host-networking") { (app: App) =>
     !(app.networks.exists(_.mode == NetworkMode.Host) && app.container.exists(_.portMappings.nonEmpty))
   } and isTrue("portDefinitions are only allowed with host-networking") { (app: App) =>
-    !(app.networks.exists(_.mode != NetworkMode.Host) && app.portDefinitions.nonEmpty)
+    !(app.networks.exists(_.mode != NetworkMode.Host) && app.portDefinitions.exists(_.nonEmpty))
   }
 
   /** expects that app is already in canonical form */
@@ -346,9 +344,7 @@ trait AppValidation {
   /** should be kept in sync with [[AppDefinition.portIndices]] */
   def portIndices(app: App): Range = {
     app.container.withFilter(_.portMappings.nonEmpty)
-      .map(_.portMappings.map(_.hostPort))
-      .getOrElse(app.portDefinitions.map(_.port))
-      .indices
+      .map(_.portMappings).orElse(app.portDefinitions).getOrElse(Nil).indices
   }
 
   /** validate most canonical API fields */
@@ -356,7 +352,7 @@ trait AppValidation {
     app.upgradeStrategy is valid
     app.container.each is valid(validContainer(enabledFeatures))
     app.storeUrls is every(urlCanBeResolvedValidator)
-    app.portDefinitions is portDefinitionsValidator
+    app.portDefinitions is optional(portDefinitionsValidator)
     app.executor should optional(matchRegexFully(executorPattern))
     app is containsCmdArgsOrContainer
     app.healthChecks is every(portIndexIsValid(portIndices(app)))
@@ -368,14 +364,10 @@ trait AppValidation {
     app.instances should optional(be >= 0)
     app.disk should optional(be >= 0.0)
     app.gpus should optional(be >= 0)
-    app.secrets is valid(isTrue("secrets feature is required for using secrets with an application"){
-      (secrets: Map[String, SecretDef]) =>
-        if (secrets.nonEmpty)
-          validateOrThrow(secrets)(secretValidator and featureEnabled(enabledFeatures, Features.SECRETS))
-        true
-    })
+    app.secrets is valid(conditional[Map[String, SecretDef]](_.nonEmpty)(
+      secretValidator and featureEnabled(enabledFeatures, Features.SECRETS)))
     app.env is envValidator(app.secrets, enabledFeatures)
-    app.acceptedResourceRoles is empty or valid(ResourceRole.validAcceptedResourceRoles(app.residency.isDefined))
+    app.acceptedResourceRoles is valid(optional(ResourceRole.validAcceptedResourceRoles(app.residency.isDefined) and notEmpty))
     app must complyWithGpuRules(enabledFeatures)
     app must complyWithMigrationAPI
     app must complyWithReadinessCheckRules

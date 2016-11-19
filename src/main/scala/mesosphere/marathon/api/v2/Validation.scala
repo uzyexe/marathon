@@ -15,14 +15,41 @@ import scala.util.matching.Regex
 
 // TODO(jdef) move this into package "validation"
 object Validation {
+
+  /*
+  sealed trait Alias
+  case object Anonymous extends Alias
+  case class Named(name: String) extends Alias
+
+  implicit class StringName(name: String) {
+    def toAlias: Alias = Named(name)
+  }
+  */
+
   def validateOrThrow[T](t: T)(implicit validator: Validator[T]): T = validate(t) match {
     case Success => t
     case f: Failure => throw ValidationFailedException(t, f)
   }
 
-  implicit def optional[T](implicit validator: Validator[T]): Validator[Option[T]] = {
+  implicit def optional[T](implicit validator: Validator[T] /*, alias: Alias = Anonymous*/ ): Validator[Option[T]] = {
     new Validator[Option[T]] {
       override def apply(option: Option[T]): Result = option.map(validator).getOrElse(Success)
+      /*
+      override def apply(option: Option[T]): Result = option.map { t =>
+        validator(t) match {
+          case Success => Success
+          case f: Failure =>
+            alias match {
+              case Anonymous => f
+              case Named(name) =>
+                Failure(f.violations.map {
+                  case g: GroupViolation => g.copy(description = Some(name))
+                  case r: RuleViolation => r.copy(description = Some(name))
+                })
+            }
+        }
+      }.getOrElse(Success)
+      */
     }
   }
 
@@ -101,6 +128,7 @@ object Validation {
       })
   }
 
+  // TODO: fix non-tail recursion
   def allRuleViolationsWithFullDescription(
     violation: Violation,
     parentDesc: Option[String] = None,
@@ -138,11 +166,11 @@ object Validation {
           case _ => true
         }
 
-        val desc = parentDesc.map {
-          p => Some(concatPath(p, g.description, prependSlash))
-        } getOrElse {
+        val desc: Option[String] = parentDesc.map { p =>
+          concatPath(p, g.description, prependSlash)
+        }.orElse (
           g.description.map(d => concatPath("", Some(d), prependSlash))
-        }
+        )
         allRuleViolationsWithFullDescription(c, desc, dot)
       }
     }
